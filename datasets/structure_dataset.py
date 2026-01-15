@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Callable
 
 import torch
@@ -8,13 +7,6 @@ from torch.utils.data import Dataset
 
 from configs.structure_config import StructureConfig
 from utils.structure.condition_builder import build_structure_condition
-
-
-@dataclass
-class StructureSample:
-    image: torch.Tensor
-    condition: torch.Tensor
-    meta: dict[str, Any]
 
 
 class StructureConditionDataset(Dataset):
@@ -33,7 +25,7 @@ class StructureConditionDataset(Dataset):
     def __len__(self) -> int:  # pragma: no cover - simple passthrough
         return len(self.base_dataset)
 
-    def __getitem__(self, idx: int) -> StructureSample:
+    def __getitem__(self, idx: int) -> dict[str, Any]:
         sample = self.base_dataset[idx]
         image = sample["tgt_img"] if isinstance(sample, dict) else sample
         if self.condition_builder is None:
@@ -41,8 +33,8 @@ class StructureConditionDataset(Dataset):
         else:
             condition = self.condition_builder(sample)
         meta = {"index": idx}
-        return StructureSample(
-            image=image,
-            condition=condition.tensor,
-            meta={**meta, **condition.meta},
-        )
+        return {
+            "image": image,
+            "condition": condition.tensor,
+            "meta": {**meta, **condition.meta},
+        }

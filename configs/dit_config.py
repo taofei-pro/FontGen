@@ -8,6 +8,17 @@ class DiTModelConfig:
     num_heads: int = 8
     mlp_ratio: float = 4.0
     dropout: float = 0.1
+    time_steps: int = 1000
+
+
+@dataclass
+class DiTDatasetConfig:
+    target_img_dir: str = "data/target"
+    reference_img_dir: str = "data/reference"
+    split_ratios: tuple[float, float] = (0.9, 0.1)
+    random_seed: int = 2025
+    batch_size: int = 2
+    num_workers: int = 2
 
 
 @dataclass
