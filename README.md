@@ -9,6 +9,8 @@
 - 扩展生成 6763 字全字库
 - 支持高分辨率输出与字体包生产
 
+**环境说明**：本项目使用 conda 环境名 `font-gen`（原 `hanzigen` 已改名）。
+
 ---
 
 ## 🧠 最强架构概览
@@ -41,34 +43,52 @@ DiT (扩散 Transformer 去噪)
 - 已接入 VQGAN‑2 tokenizer
 - 已升级为标准扩散训练（加噪/去噪）
 - 支持加载训练好的 tokenizer 权重
+- 已替换为 Transformer DiT 结构（基础版）
 
 ---
 
 ## 🔧 仍需完成的部分
 
 1) VQGAN‑2 完整训练
-- 加入感知损失与判别器稳定训练
-- 导出 tokenizer checkpoint
+- ✅ 已加入 LPIPS 感知损失与判别器稳定训练（hinge + warmup）
+- ✅ 支持导出 tokenizer checkpoint
 
 2) DiT 采样/推理
-- 加入 DDIM/DPM 等采样器
-- 实现完整推理与生成流程
+- ✅ 已提供 `infer_nextgen.py` 基础采样流程（DDIM）
+- ✅ 支持 DDPM 采样
+- ✅ 支持 DPM++ 2M（`--sampler dpmpp_2m`）
+- ✅ 支持 DPM++ 2S（`--sampler dpmpp_2s`）
+- ✅ 支持 DPM++ 3M（`--sampler dpmpp_3m`）
+- ✅ 支持 Karras 噪声调度（`--schedule karras`）
+- ✅ 2S 中点步使用 lambda→sigma→t 映射（更稳定）
+- ✅ 支持 CFG Rescale（`--cfg_rescale`）与 x0 clip（`--x0_clip`）
+- ✅ DPM++ 多步采样加入历史截断（更稳定）
+- ✅ 末步直接回落到 x0（更稳，含 DDIM）
+- TODO: DPM-Solver++ 更完整策略与噪声调度改进
 
 3) 超分链路
-- 接入 SR 模型（Real‑ESRGAN / SwinIR）
-- 实现 patch/tiling 推理
+- ✅ 已提供 `train_sr.py` 基础 SR 训练与 `tile_infer` 推理
+- ✅ 增加 EDSR 结构（`--model_name edsr`）
+- ✅ 允许外部 Real‑ESRGAN / SwinIR（需 TorchScript 权重，`--sr_model realesrgan|swinir`）
+- TODO: 接入 Real‑ESRGAN / SwinIR 等更强模型
 
 4) 矢量化与字体包输出
-- Potrace → SVG
-- FontForge → TTF/OTF
+- ✅ `convert_to_svg.py`（Potrace → SVG）
+- ✅ `fontforge_pipeline.py`（FontForge → TTF/OTF，可选）
 
 ---
 
 ## 🚀 当前可用训练命令（最小验证）
 
 ```bash
+# 0) 字体覆盖率分析与数据准备（以 fonts/M8.ttf 为目标）
+bash scripts/analyze_font.sh
+bash scripts/prepare_dataset.sh
+bash scripts/extract_charset.sh
+
 # VQGAN‑2 tokenizer 训练（最小闭环）
 python train_vqgan2.py --max_steps 20
+# 可选：--perceptual_weight 0.4 --adversarial_weight 0.1 --discriminator_start_steps 500
 
 # DiT 训练（最小闭环，默认结构条件）
 python train_dit.py --max_steps 20
@@ -76,6 +96,67 @@ python train_dit.py --max_steps 20
 # DiT 使用预训练 tokenizer
 python train_dit.py --vqgan2_ckpt checkpoints/vqgan2.pth --max_steps 20
 ```
+
+---
+
+## 🧪 NextGen 推理与向量化（最小闭环）
+
+```bash
+# 1) 推理生成
+bash scripts/infer_nextgen.sh
+
+# 2) Potrace 矢量化
+bash scripts/convert_to_svg_nextgen.sh
+
+# 3) FontForge 打包字体（需系统安装 fontforge 命令）
+bash scripts/svg_to_font.sh
+```
+
+---
+
+## 🧰 训练流程与调参建议（准备训练）
+
+```bash
+# 1) 数据准备（M8 作为目标字）
+bash scripts/analyze_font.sh
+bash scripts/prepare_dataset.sh
+bash scripts/extract_charset.sh
+
+# 2) VQGAN‑2 训练（建议先跑 5k~20k steps）
+python train_vqgan2.py \
+  --max_steps 5000 \
+  --perceptual_weight 0.4 \
+  --adversarial_weight 0.1 \
+  --discriminator_start_steps 500
+
+# 3) DiT 训练（加载 tokenizer）
+python train_dit.py --vqgan2_ckpt checkpoints/vqgan2.pth --max_steps 10000
+
+# 4) 推理（推荐采样）
+SAMPLER=dpmpp_2m SCHEDULE=karras CFG_RESCALE=0.7 X0_CLIP=1.0 \
+  bash scripts/infer_nextgen.sh
+
+# 5) 超分（可选）
+python train_sr.py --model_name edsr --max_steps 2000 --save_path checkpoints/sr_edsr.pth
+ENABLE_SR=1 SR_MODEL=edsr SR_CKPT=checkpoints/sr_edsr.pth \
+  bash scripts/infer_nextgen.sh
+
+# 6) 矢量化与字体输出
+bash scripts/convert_to_svg_nextgen.sh
+bash scripts/svg_to_font.sh
+```
+
+调参建议（起点）：
+- 采样：`SAMPLER=dpmpp_2m` 或 `dpmpp_3m`，`SCHEDULE=karras`，`CFG_RESCALE=0.7`，`X0_CLIP=1.0`
+- 若显存紧：降低 `batch_size`、`sampling_steps`，或关闭 SR
+- 若对抗不稳定：调大 `discriminator_start_steps`（如 1000）
+
+---
+
+## ✅ 完整性检查（当前状态）
+
+- NextGen 主流程已完整：数据准备 → VQGAN‑2 → DiT → 推理 → SR → 矢量化 → 字体输出
+- 旧版 LDM 相关脚本已移除，避免误用
 
 ---
 

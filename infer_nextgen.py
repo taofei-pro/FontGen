@@ -1,17 +1,343 @@
 import argparse
+from pathlib import Path
+
+import torch
+from torch.utils.data import DataLoader
+
+from configs.dit_config import DiTModelConfig
+from configs.structure_config import StructureConfig
+from configs.vqgan2_config import VQGAN2ModelConfig
+from datasets.image_dataset import GlyphImageDataset
+from datasets.structure_dataset import StructureConditionDataset
+from models.dit.condition_encoder import ConditionEncoder
+from models.dit.dit_model import DiTModel
+from models.dit.scheduler import DiffusionScheduler
+from models.sr.sr_model import SRModel
+from models.sr.tiling import tile_infer
+from models.vqgan2.tokenizer import VQGAN2Tokenizer
+from utils.hardware.hardware_utils import select_device
+from utils.image.image_utils import convert_tensor_to_pil_images, save_images
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Next-gen inference pipeline")
-    parser.add_argument("--charset", type=str, default=None)
+    parser.add_argument("--condition_img_dir", type=str, default="data/target")
     parser.add_argument("--output_dir", type=str, default="outputs_nextgen")
+    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--num_workers", type=int, default=2)
+    parser.add_argument("--device", type=str, default=None)
+    parser.add_argument("--vqgan2_ckpt", type=str, default="checkpoints/vqgan2.pth")
+    parser.add_argument("--dit_ckpt", type=str, default="checkpoints/dit.pth")
+    parser.add_argument("--sampling_steps", type=int, default=50)
+    parser.add_argument("--guidance_scale", type=float, default=1.0)
+    parser.add_argument("--cfg_rescale", type=float, default=0.0)
+    parser.add_argument("--x0_clip", type=float, default=None)
+    parser.add_argument(
+        "--schedule",
+        type=str,
+        choices=["linear", "karras"],
+        default="linear",
+    )
+    parser.add_argument("--rho", type=float, default=7.0)
+    parser.add_argument(
+        "--sampler",
+        type=str,
+        choices=["ddim", "ddpm", "dpmpp_2m", "dpmpp_2s", "dpmpp_3m"],
+        default="ddim",
+    )
+    parser.add_argument("--use_component_mask", action="store_true")
+    parser.add_argument("--use_edge_map", action="store_true")
+    parser.add_argument("--use_skeleton", action="store_true")
+    parser.add_argument("--use_ids", action="store_true")
+    parser.add_argument("--enable_sr", action="store_true")
+    parser.add_argument("--sr_ckpt", type=str, default=None)
+    parser.add_argument("--sr_model", type=str, default="basic")
+    parser.add_argument("--sr_tile", action="store_true")
+    parser.add_argument("--sr_tile_size", type=int, default=256)
     return parser.parse_args()
+
+
+def build_structure_config(args: argparse.Namespace) -> StructureConfig:
+    defaults = StructureConfig()
+    flags_provided = (
+        args.use_component_mask
+        or args.use_edge_map
+        or args.use_skeleton
+        or args.use_ids
+    )
+    if not flags_provided:
+        return defaults
+    return StructureConfig(
+        use_ids=args.use_ids,
+        use_component_mask=args.use_component_mask,
+        use_skeleton=args.use_skeleton,
+        use_edge_map=args.use_edge_map,
+    )
+
+
+def load_structure_config_from_ckpt(
+    ckpt_path: str,
+    device: torch.device,
+) -> StructureConfig | None:
+    checkpoint = torch.load(ckpt_path, map_location=device)
+    if "structure_config" in checkpoint:
+        return StructureConfig(**checkpoint["structure_config"])
+    return None
+
+
+@torch.no_grad()
+def sample_tokens(
+    model: DiTModel,
+    condition_encoder: ConditionEncoder,
+    scheduler: DiffusionScheduler,
+    cond: torch.Tensor,
+    steps: int,
+    guidance_scale: float,
+    sampler: str,
+    schedule: str,
+    rho: float,
+    cfg_rescale: float,
+    x0_clip: float | None,
+) -> torch.Tensor:
+    batch_size = cond.size(0)
+    token_dim = model.token_dim
+    height, width = cond.shape[-2:]
+    tokens = torch.randn(
+        (batch_size, token_dim, height, width),
+        device=cond.device,
+        dtype=cond.dtype,
+    )
+    cond_tokens = condition_encoder(cond)
+
+    timesteps = scheduler.get_timesteps(steps, schedule=schedule, rho=rho)
+    prev_preds: list[torch.Tensor] = []
+    prev_lambdas: list[torch.Tensor] = []
+    for i, t in enumerate(timesteps):
+        t_int = int(t.item())
+        t_prev = int(timesteps[i + 1].item()) if i + 1 < len(timesteps) else 0
+
+        def predict_noise(x: torch.Tensor, t_val: int) -> torch.Tensor:
+            t_tensor = torch.full(
+                (batch_size,), t_val, device=cond.device, dtype=torch.long
+            )
+            if guidance_scale != 1.0:
+                pred_uncond = model(x, cond_tokens=None, timesteps=t_tensor)
+                pred_cond = model(x, cond_tokens=cond_tokens, timesteps=t_tensor)
+                pred = pred_uncond + guidance_scale * (pred_cond - pred_uncond)
+                if cfg_rescale > 0:
+                    std_pred = pred.std(dim=(1, 2, 3), keepdim=True).clamp_min(1e-6)
+                    std_cond = pred_cond.std(dim=(1, 2, 3), keepdim=True).clamp_min(1e-6)
+                    rescaled = pred * (std_cond / std_pred)
+                    pred = pred * (1 - cfg_rescale) + rescaled * cfg_rescale
+                return pred
+            return model(x, cond_tokens=cond_tokens, timesteps=t_tensor)
+
+        def maybe_clip_x0(pred_x0: torch.Tensor) -> torch.Tensor:
+            if x0_clip is None:
+                return pred_x0
+            return pred_x0.clamp(-x0_clip, x0_clip)
+
+        def predict_x0(x: torch.Tensor, noise: torch.Tensor, t_val: int) -> torch.Tensor:
+            alpha_t, sigma_t, _ = scheduler.get_alpha_sigma_lambda(t_val)
+            pred_x0 = (x - sigma_t * noise) / alpha_t
+            return maybe_clip_x0(pred_x0)
+
+        pred_noise = predict_noise(tokens, t_int)
+        if sampler == "ddpm":
+            tokens = scheduler.ddpm_step(tokens, t_int, pred_noise)
+        elif sampler == "dpmpp_2m":
+            alpha_t, sigma_t, lambda_t = scheduler.get_alpha_sigma_lambda(t_int)
+            alpha_s, sigma_s, lambda_s = scheduler.get_alpha_sigma_lambda(t_prev)
+            pred_x0 = (tokens - sigma_t * pred_noise) / alpha_t
+            pred_x0 = maybe_clip_x0(pred_x0)
+            if t_prev == 0:
+                tokens = pred_x0
+                prev_preds.append(pred_noise)
+                prev_lambdas.append(lambda_t)
+                continue
+            if len(prev_preds) < 1 or len(prev_lambdas) < 1:
+                pred_noise_hat = pred_noise
+            else:
+                h = lambda_s - lambda_t
+                h_prev = lambda_t - prev_lambdas[-1]
+                r = h_prev / h
+                pred_noise_hat = (1 + 1 / (2 * r)) * pred_noise - (
+                    1 / (2 * r)
+                ) * prev_preds[-1]
+            tokens = alpha_s * pred_x0 + sigma_s * pred_noise_hat
+            prev_preds.append(pred_noise)
+            prev_lambdas.append(lambda_t)
+        elif sampler == "dpmpp_2s":
+            alpha_t, sigma_t, lambda_t = scheduler.get_alpha_sigma_lambda(t_int)
+            alpha_s, sigma_s, lambda_s = scheduler.get_alpha_sigma_lambda(t_prev)
+            pred_x0 = (tokens - sigma_t * pred_noise) / alpha_t
+            pred_x0 = maybe_clip_x0(pred_x0)
+            if t_prev == 0:
+                tokens = pred_x0
+                prev_preds.append(pred_noise)
+                prev_lambdas.append(lambda_t)
+                continue
+            lambda_mid = lambda_t + 0.5 * (lambda_s - lambda_t)
+            alpha_m, sigma_m = scheduler.alpha_sigma_from_lambda(lambda_mid)
+            t_mid = int(scheduler.t_from_lambda(lambda_mid.unsqueeze(0))[0].item())
+            x_mid = alpha_m * pred_x0 + sigma_m * pred_noise
+            pred_noise_mid = predict_noise(x_mid, t_mid)
+            tokens = alpha_s * pred_x0 + sigma_s * pred_noise_mid
+            prev_preds.append(pred_noise)
+            prev_lambdas.append(lambda_t)
+        elif sampler == "dpmpp_3m":
+            alpha_t, sigma_t, lambda_t = scheduler.get_alpha_sigma_lambda(t_int)
+            alpha_s, sigma_s, lambda_s = scheduler.get_alpha_sigma_lambda(t_prev)
+            pred_x0 = (tokens - sigma_t * pred_noise) / alpha_t
+            pred_x0 = maybe_clip_x0(pred_x0)
+            if t_prev == 0:
+                tokens = pred_x0
+                prev_preds.append(pred_noise)
+                prev_lambdas.append(lambda_t)
+                continue
+            if len(prev_preds) < 2 or len(prev_lambdas) < 2:
+                pred_noise_hat = pred_noise
+            else:
+                lam0, lam1, lam2 = lambda_t, prev_lambdas[-1], prev_lambdas[-2]
+                eps0, eps1, eps2 = pred_noise, prev_preds[-1], prev_preds[-2]
+                l0 = (lambda_s - lam1) * (lambda_s - lam2) / (
+                    (lam0 - lam1) * (lam0 - lam2)
+                )
+                l1 = (lambda_s - lam0) * (lambda_s - lam2) / (
+                    (lam1 - lam0) * (lam1 - lam2)
+                )
+                l2 = (lambda_s - lam0) * (lambda_s - lam1) / (
+                    (lam2 - lam0) * (lam2 - lam1)
+                )
+                pred_noise_hat = l0 * eps0 + l1 * eps1 + l2 * eps2
+            tokens = alpha_s * pred_x0 + sigma_s * pred_noise_hat
+            prev_preds.append(pred_noise)
+            prev_lambdas.append(lambda_t)
+        else:
+            if t_prev == 0:
+                tokens = predict_x0(tokens, pred_noise, t_int)
+            else:
+                tokens = scheduler.ddim_step(tokens, t_int, pred_noise)
+
+        # Keep last 2 history entries to stabilize 2M/3M
+        if len(prev_preds) > 2:
+            prev_preds = prev_preds[-2:]
+        if len(prev_lambdas) > 2:
+            prev_lambdas = prev_lambdas[-2:]
+    return tokens
 
 
 def main() -> None:
     args = parse_args()
-    print("Next-gen inference scaffold initialized")
-    print(args)
+    device = select_device(args.device)
+    structure_config = load_structure_config_from_ckpt(args.dit_ckpt, device)
+    if structure_config is None:
+        structure_config = build_structure_config(args)
+    if structure_config.use_ids:
+        print("⚠️ IDS结构条件尚未接入数据源，将暂时忽略。")
+        structure_config.use_ids = False
+
+    dataset = GlyphImageDataset(img_dir=args.condition_img_dir, normalize=True)
+    dataset = StructureConditionDataset(base_dataset=dataset, config=structure_config)
+    loader = DataLoader(
+        dataset=dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=min(2, args.num_workers),
+        pin_memory=True if device.type == "cuda" else False,
+    )
+
+    vqgan2_config = VQGAN2ModelConfig()
+    tokenizer = VQGAN2Tokenizer(
+        in_channels=vqgan2_config.input_img_channels,
+        latent_dim=vqgan2_config.latent_dim,
+        token_dim=vqgan2_config.token_dim,
+        codebook_size=vqgan2_config.codebook_size,
+        commitment_cost=vqgan2_config.commitment_cost,
+    ).to(device)
+    dit_config = DiTModelConfig(token_dim=vqgan2_config.token_dim)
+    model = DiTModel(
+        token_dim=dit_config.token_dim,
+        time_steps=dit_config.time_steps,
+        num_layers=dit_config.num_layers,
+        num_heads=dit_config.num_heads,
+        mlp_ratio=dit_config.mlp_ratio,
+        dropout=dit_config.dropout,
+    ).to(device)
+    condition_channels = (
+        int(structure_config.use_component_mask)
+        + int(structure_config.use_edge_map)
+        + int(structure_config.use_skeleton)
+    )
+    condition_encoder = ConditionEncoder(
+        in_channels=condition_channels,
+        embed_dim=dit_config.token_dim,
+    ).to(device)
+
+    vq_ckpt = torch.load(args.vqgan2_ckpt, map_location=device)
+    tokenizer.load_state_dict(vq_ckpt["tokenizer"])
+    tokenizer.eval()
+
+    dit_ckpt = torch.load(args.dit_ckpt, map_location=device)
+    model.load_state_dict(dit_ckpt["dit"])
+    condition_encoder.load_state_dict(dit_ckpt["condition_encoder"])
+    model.eval()
+    condition_encoder.eval()
+
+    sr_model = None
+    if args.enable_sr:
+        sr_model = SRModel(
+            scale=2, model_name=args.sr_model, ckpt_path=args.sr_ckpt
+        ).to(device)
+        if args.sr_ckpt:
+            sr_ckpt = torch.load(args.sr_ckpt, map_location=device)
+            if sr_model.is_torchscript:
+                sr_ckpt = None
+            elif "model_name" in sr_ckpt:
+                sr_model = SRModel(
+                    scale=sr_ckpt.get("scale", 2),
+                    model_name=sr_ckpt["model_name"],
+                ).to(device)
+                sr_model.load_state_dict(sr_ckpt["sr"])
+            else:
+                sr_model.load_state_dict(sr_ckpt["sr"])
+        sr_model.eval()
+
+    scheduler = DiffusionScheduler(steps=dit_config.time_steps, device=device)
+    output_dir = Path(args.output_dir)
+
+    for batch in loader:
+        cond = batch["condition"].to(device)
+        tokens = sample_tokens(
+            model=model,
+            condition_encoder=condition_encoder,
+            scheduler=scheduler,
+            cond=cond,
+            steps=args.sampling_steps,
+            guidance_scale=args.guidance_scale,
+            sampler=args.sampler,
+            schedule=args.schedule,
+            rho=args.rho,
+            cfg_rescale=args.cfg_rescale,
+            x0_clip=args.x0_clip,
+        )
+        images = tokenizer.decode(tokens)
+
+        if sr_model is not None:
+            if args.sr_tile:
+                images = tile_infer(sr_model, images, tile_size=args.sr_tile_size)
+            else:
+                images = sr_model(images)
+
+        pil_images = convert_tensor_to_pil_images(images)
+        if not isinstance(pil_images, list):
+            pil_images = [pil_images]
+        img_names = []
+        if isinstance(batch.get("meta"), dict) and "img_name" in batch["meta"]:
+            img_names = list(batch["meta"]["img_name"])
+        if not img_names:
+            img_names = [f"sample_{i}" for i in range(len(pil_images))]
+        save_images(pil_images, img_names, output_dir)
 
 
 if __name__ == "__main__":

@@ -29,6 +29,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_steps", type=int, default=200)
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--save_path", type=str, default=None)
+    parser.add_argument("--perceptual_weight", type=float, default=None)
+    parser.add_argument("--adversarial_weight", type=float, default=None)
+    parser.add_argument("--discriminator_start_steps", type=int, default=None)
     return parser.parse_args()
 
 
@@ -49,9 +52,19 @@ def main() -> None:
     )
 
     model_config = VQGAN2ModelConfig()
+    defaults = VQGAN2TrainingConfig()
     training_config = VQGAN2TrainingConfig(
         batch_size=dataset_config.batch_size,
-        model_save_path=args.save_path or VQGAN2TrainingConfig().model_save_path,
+        model_save_path=args.save_path or defaults.model_save_path,
+        perceptual_weight=args.perceptual_weight
+        if args.perceptual_weight is not None
+        else defaults.perceptual_weight,
+        adversarial_weight=args.adversarial_weight
+        if args.adversarial_weight is not None
+        else defaults.adversarial_weight,
+        discriminator_start_steps=args.discriminator_start_steps
+        if args.discriminator_start_steps is not None
+        else defaults.discriminator_start_steps,
     )
 
     base_dataset = PairedGlyphImageDataset(
@@ -83,7 +96,9 @@ def main() -> None:
         codebook_size=model_config.codebook_size,
         commitment_cost=model_config.commitment_cost,
     ).to(device)
-    recon_loss_fn = VQGAN2Loss().to(device)
+    recon_loss_fn = VQGAN2Loss(
+        perceptual_weight=training_config.perceptual_weight
+    ).to(device)
 
     discriminator = None
     if model_config.use_vqgan:
@@ -104,7 +119,13 @@ def main() -> None:
             weight_decay=training_config.weight_decay,
         )
 
-    bce_loss = torch.nn.BCEWithLogitsLoss()
+    def d_hinge_loss(real_logits, fake_logits):
+        real_loss = torch.relu(1.0 - real_logits).mean()
+        fake_loss = torch.relu(1.0 + fake_logits).mean()
+        return real_loss + fake_loss
+
+    def g_hinge_loss(fake_logits):
+        return -fake_logits.mean()
 
     tokenizer.train()
     if discriminator is not None:
@@ -117,23 +138,27 @@ def main() -> None:
 
             tokens, vq_loss = tokenizer.encode(images)
             recon = tokenizer.decode(tokens)
-            recon_loss = recon_loss_fn(recon, images)
+            losses = recon_loss_fn.compute_losses(recon, images)
+            recon_loss = losses["total"]
             g_loss = recon_loss + vq_loss
 
-            if discriminator is not None and d_optimizer is not None:
+            use_disc = (
+                discriminator is not None
+                and d_optimizer is not None
+                and step >= training_config.discriminator_start_steps
+            )
+            if use_disc:
                 # Discriminator step
                 d_optimizer.zero_grad()
                 real_logits = discriminator(images)
                 fake_logits = discriminator(recon.detach())
-                real_loss = bce_loss(real_logits, torch.ones_like(real_logits))
-                fake_loss = bce_loss(fake_logits, torch.zeros_like(fake_logits))
-                d_loss = (real_loss + fake_loss) * 0.5
+                d_loss = d_hinge_loss(real_logits, fake_logits)
                 d_loss.backward()
                 d_optimizer.step()
 
                 # Generator adversarial loss
                 adv_logits = discriminator(recon)
-                adv_loss = bce_loss(adv_logits, torch.ones_like(adv_logits))
+                adv_loss = g_hinge_loss(adv_logits)
                 g_loss = g_loss + training_config.adversarial_weight * adv_loss
 
             g_optimizer.zero_grad()
@@ -143,7 +168,8 @@ def main() -> None:
             if step % 10 == 0:
                 print(
                     f"[VQGAN2] step={step} "
-                    f"recon={recon_loss.item():.6f} "
+                    f"recon={losses['l1'].item():.6f} "
+                    f"perc={losses['perceptual'].item():.6f} "
                     f"vq={vq_loss.item():.6f} "
                     f"total={g_loss.item():.6f}"
                 )

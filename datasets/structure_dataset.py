@@ -33,6 +33,8 @@ class StructureConditionDataset(Dataset):
         else:
             condition = self.condition_builder(sample)
         meta = {"index": idx}
+        if isinstance(sample, dict) and "img_name" in sample:
+            meta["img_name"] = sample["img_name"]
         return {
             "image": image,
             "condition": condition.tensor,

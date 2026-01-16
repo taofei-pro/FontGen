@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 
 import torch
 import torch.nn.functional as F
@@ -37,6 +38,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--use_edge_map", action="store_true")
     parser.add_argument("--use_skeleton", action="store_true")
     parser.add_argument("--use_ids", action="store_true")
+    parser.add_argument("--save_path", type=str, default="checkpoints/dit.pth")
     return parser.parse_args()
 
 
@@ -123,6 +125,10 @@ def main() -> None:
     model = DiTModel(
         token_dim=model_config.token_dim,
         time_steps=model_config.time_steps,
+        num_layers=model_config.num_layers,
+        num_heads=model_config.num_heads,
+        mlp_ratio=model_config.mlp_ratio,
+        dropout=model_config.dropout,
     ).to(device)
     tokenizer = VQGAN2Tokenizer(
         in_channels=vqgan2_config.input_img_channels,
@@ -182,6 +188,17 @@ def main() -> None:
                 )
             step += 1
             if args.max_steps and step >= args.max_steps:
+                save_path = Path(args.save_path)
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+                torch.save(
+                    {
+                        "dit": model.state_dict(),
+                        "condition_encoder": condition_encoder.state_dict(),
+                        "structure_config": structure_config.__dict__,
+                    },
+                    save_path,
+                )
+                print(f"✅ 已保存 DiT 模型: {save_path}")
                 print("✅ 已达到最大训练步数，停止。")
                 return
 

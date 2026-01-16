@@ -1,6 +1,6 @@
 #!/bin/bash
 
-TARGET_FONT_PATH="fonts/Z1.ttf"
+TARGET_FONT_PATH="fonts/M8.ttf"
 REFERENCE_FONTS_DIR="fonts/jigmo/"
 IMG_WIDTH=512
 IMG_HEIGHT=512

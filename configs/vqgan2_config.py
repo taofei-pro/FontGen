@@ -32,4 +32,5 @@ class VQGAN2TrainingConfig:
     discriminator_lr: float = 2e-4
     perceptual_weight: float = 0.4
     adversarial_weight: float = 0.1
+    discriminator_start_steps: int = 500
     model_save_path: str = "checkpoints/vqgan2.pth"

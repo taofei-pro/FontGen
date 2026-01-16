@@ -137,3 +137,27 @@ class MetricsImageDataset(Dataset):
             "gen_img": gen_img,
             "gt_img": gt_img,
         }
+
+
+class GlyphImageDataset(Dataset):
+    """
+    Single image dataset for inference/utility pipelines.
+    """
+
+    def __init__(
+        self,
+        img_dir: str | Path,
+        normalize: bool = True,
+    ):
+        self.img_paths = get_image_paths(img_dir)
+        self.img_names = get_image_names(self.img_paths)
+        self.transform = create_transform(normalize=normalize)
+
+    def __len__(self) -> int:
+        return len(self.img_paths)
+
+    def __getitem__(self, idx: int) -> dict:
+        img = Image.open(self.img_paths[idx]).convert("L")
+        img = self.transform(img)
+        img_name = self.img_names[idx]
+        return {"tgt_img": img, "img_name": img_name}
