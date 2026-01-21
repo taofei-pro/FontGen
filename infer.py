@@ -102,13 +102,13 @@ def sample_tokens(
 ) -> torch.Tensor:
     batch_size = cond.size(0)
     token_dim = model.token_dim
-    height, width = cond.shape[-2:]
+    cond_tokens = condition_encoder(cond)
+    height, width = cond_tokens.shape[-2:]
     tokens = torch.randn(
         (batch_size, token_dim, height, width),
         device=cond.device,
         dtype=cond.dtype,
     )
-    cond_tokens = condition_encoder(cond)
 
     timesteps = scheduler.get_timesteps(steps, schedule=schedule, rho=rho)
     prev_preds: list[torch.Tensor] = []

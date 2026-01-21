@@ -157,6 +157,12 @@ bash scripts/compute_metrics.sh
 
 ---
 
+## 📊 训练结果记录
+
+训练与评估结果统一记录在 `RESULTS.md`，每轮优化后追加一行。
+
+---
+
 ## 📌 目录结构重点
 
 - `configs/`：VQGAN‑2 / DiT / SR / Structure 配置
