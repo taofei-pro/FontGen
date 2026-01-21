@@ -15,7 +15,7 @@ from models.dit.dit_model import DiTModel
 from models.dit.scheduler import DiffusionScheduler
 from models.sr.sr_model import SRModel
 from models.sr.tiling import tile_infer
-from models.vqgan2.tokenizer import VQGAN2Tokenizer
+from models.vqgan.tokenizer import VQGAN2Tokenizer
 from utils.hardware.hardware_utils import select_device
 from utils.image.image_utils import convert_tensor_to_pil_images, save_images
 
@@ -102,7 +102,7 @@ def sample_tokens(
 ) -> torch.Tensor:
     batch_size = cond.size(0)
     token_dim = model.token_dim
-    cond_tokens = condition_encoder(cond)
+    cond_tokens, cond_seq = condition_encoder(cond)
     height, width = cond_tokens.shape[-2:]
     tokens = torch.randn(
         (batch_size, token_dim, height, width),
@@ -122,8 +122,8 @@ def sample_tokens(
                 (batch_size,), t_val, device=cond.device, dtype=torch.long
             )
             if guidance_scale != 1.0:
-                pred_uncond = model(x, cond_tokens=None, timesteps=t_tensor)
-                pred_cond = model(x, cond_tokens=cond_tokens, timesteps=t_tensor)
+                pred_uncond = model(x, cond_tokens=None, cond_seq=None, timesteps=t_tensor)
+                pred_cond = model(x, cond_tokens=cond_tokens, cond_seq=cond_seq, timesteps=t_tensor)
                 pred = pred_uncond + guidance_scale * (pred_cond - pred_uncond)
                 if cfg_rescale > 0:
                     std_pred = pred.std(dim=(1, 2, 3), keepdim=True).clamp_min(1e-6)
@@ -131,7 +131,7 @@ def sample_tokens(
                     rescaled = pred * (std_cond / std_pred)
                     pred = pred * (1 - cfg_rescale) + rescaled * cfg_rescale
                 return pred
-            return model(x, cond_tokens=cond_tokens, timesteps=t_tensor)
+            return model(x, cond_tokens=cond_tokens, cond_seq=cond_seq, timesteps=t_tensor)
 
         def maybe_clip_x0(pred_x0: torch.Tensor) -> torch.Tensor:
             if x0_clip is None:
@@ -252,9 +252,12 @@ def main() -> None:
     tokenizer = VQGAN2Tokenizer(
         in_channels=vqgan2_config.input_img_channels,
         latent_dim=vqgan2_config.latent_dim,
+        base_channels=vqgan2_config.base_channels,
         token_dim=vqgan2_config.token_dim,
         codebook_size=vqgan2_config.codebook_size,
         commitment_cost=vqgan2_config.commitment_cost,
+        multiscale=vqgan2_config.multiscale,
+        coarse_downsample=vqgan2_config.coarse_downsample,
     ).to(device)
     dit_config = DiTModelConfig(token_dim=vqgan2_config.token_dim)
     model = DiTModel(
@@ -264,6 +267,8 @@ def main() -> None:
         num_heads=dit_config.num_heads,
         mlp_ratio=dit_config.mlp_ratio,
         dropout=dit_config.dropout,
+        window_size=dit_config.window_size,
+        shift_window=dit_config.shift_window,
     ).to(device)
     condition_channels = (
         int(structure_config.use_component_mask)

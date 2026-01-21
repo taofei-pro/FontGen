@@ -12,9 +12,9 @@ from configs.vqgan_config import (
 )
 from datasets.dataset_utils import split_dataset
 from datasets.image_dataset import PairedGlyphImageDataset
-from models.vqgan2.discriminator import PatchGANDiscriminator
-from models.vqgan2.loss import VQGAN2Loss
-from models.vqgan2.tokenizer import VQGAN2Tokenizer
+from models.vqgan.discriminator import PatchGANDiscriminator
+from models.vqgan.loss import VQGAN2Loss
+from models.vqgan.tokenizer import VQGAN2Tokenizer
 from utils.hardware.hardware_utils import select_device
 
 
@@ -92,9 +92,12 @@ def main() -> None:
     tokenizer = VQGAN2Tokenizer(
         in_channels=model_config.input_img_channels,
         latent_dim=model_config.latent_dim,
+        base_channels=model_config.base_channels,
         token_dim=model_config.token_dim,
         codebook_size=model_config.codebook_size,
         commitment_cost=model_config.commitment_cost,
+        multiscale=model_config.multiscale,
+        coarse_downsample=model_config.coarse_downsample,
     ).to(device)
     recon_loss_fn = VQGAN2Loss(
         perceptual_weight=training_config.perceptual_weight

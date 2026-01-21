@@ -9,6 +9,8 @@ class DiTModelConfig:
     mlp_ratio: float = 4.0
     dropout: float = 0.1
     time_steps: int = 1000
+    window_size: int = 8
+    shift_window: bool = True
 
 
 @dataclass

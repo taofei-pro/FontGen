@@ -19,6 +19,8 @@ class VQGAN2ModelConfig:
     token_dim: int = 256
     codebook_size: int = 512
     commitment_cost: float = 0.25
+    multiscale: bool = True
+    coarse_downsample: int = 2
     use_vqgan: bool = True
 
 

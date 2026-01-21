@@ -37,13 +37,16 @@ DiT (扩散 Transformer 去噪)
 
 2) VQGAN‑2 tokenizer
 - 已加入量化/码本
-- 支持 `train_vqgan2.py` 训练并保存权重
+- 支持 `train_vqgan.py` 训练并保存权重
+- ✅ 多尺度量化（fine + coarse）以提升细节保真
 
 3) DiT 训练流程
 - 已接入 VQGAN‑2 tokenizer
 - 已升级为标准扩散训练（加噪/去噪）
 - 支持加载训练好的 tokenizer 权重
 - 已替换为 Transformer DiT 结构（基础版）
+- ✅ 窗口注意力（window_size=8）降低序列成本
+- ✅ 支持 Shifted Window（交错窗口提升跨窗建模）
 
 ---
 
@@ -87,7 +90,7 @@ bash scripts/prepare_dataset.sh
 bash scripts/extract_charset.sh
 
 # VQGAN‑2 tokenizer 训练（最小闭环）
-python train_vqgan2.py --max_steps 20
+python train_vqgan.py --max_steps 20
 # 可选：--perceptual_weight 0.4 --adversarial_weight 0.1 --discriminator_start_steps 500
 
 # DiT 训练（最小闭环，默认结构条件）
@@ -166,10 +169,10 @@ bash scripts/compute_metrics.sh
 ## 📌 目录结构重点
 
 - `configs/`：VQGAN‑2 / DiT / SR / Structure 配置
-- `models/vqgan2/`：VQGAN‑2 tokenizer + 判别器
+- `models/vqgan/`：VQGAN‑2 tokenizer + 判别器
 - `models/dit/`：DiT + Scheduler
 - `datasets/structure_dataset.py`：结构条件数据集
-- `train_vqgan2.py` / `train_dit.py`：训练入口
+- `train_vqgan.py` / `train_dit.py`：训练入口
 
 ---
 

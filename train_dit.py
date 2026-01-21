@@ -14,7 +14,7 @@ from datasets.structure_dataset import StructureConditionDataset
 from models.dit.condition_encoder import ConditionEncoder
 from models.dit.dit_model import DiTModel
 from models.dit.scheduler import DiffusionScheduler
-from models.vqgan2.tokenizer import VQGAN2Tokenizer
+from models.vqgan.tokenizer import VQGAN2Tokenizer
 from utils.hardware.hardware_utils import print_model_params, select_device
 
 
@@ -125,13 +125,18 @@ def main() -> None:
         num_heads=model_config.num_heads,
         mlp_ratio=model_config.mlp_ratio,
         dropout=model_config.dropout,
+        window_size=model_config.window_size,
+        shift_window=model_config.shift_window,
     ).to(device)
     tokenizer = VQGAN2Tokenizer(
         in_channels=vqgan2_config.input_img_channels,
         latent_dim=vqgan2_config.latent_dim,
+        base_channels=vqgan2_config.base_channels,
         token_dim=vqgan2_config.token_dim,
         codebook_size=vqgan2_config.codebook_size,
         commitment_cost=vqgan2_config.commitment_cost,
+        multiscale=vqgan2_config.multiscale,
+        coarse_downsample=vqgan2_config.coarse_downsample,
     ).to(device)
     if args.vqgan2_ckpt:
         checkpoint = torch.load(args.vqgan2_ckpt, map_location=device)
@@ -164,7 +169,7 @@ def main() -> None:
         for batch in train_loader:
             images = batch["image"].to(device)
             cond = batch["condition"].to(device)
-            cond_tokens = condition_encoder(cond)
+            cond_tokens, cond_seq = condition_encoder(cond)
             tokens, vq_loss = tokenizer.encode(images)
             if not tokenizer.training:
                 vq_loss = torch.zeros_like(vq_loss)
@@ -183,6 +188,7 @@ def main() -> None:
             pred_noise = model(
                 noisy_tokens,
                 cond_tokens=cond_tokens,
+                cond_seq=cond_seq,
                 timesteps=timesteps,
             )
             loss = F.mse_loss(pred_noise, noise) + vq_loss
