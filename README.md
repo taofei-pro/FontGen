@@ -118,7 +118,7 @@ bash scripts/svg_to_font.sh
 
 ```bash
 # 1) 数据准备（M8 作为目标字）
-# 注意：已在 tokenizer 中加入下采样，默认使用 128x128
+# 注意：已在 tokenizer 中加入下采样，默认使用 256x256
 bash scripts/analyze_font.sh
 bash scripts/prepare_dataset.sh
 bash scripts/extract_charset.sh
@@ -144,7 +144,7 @@ bash scripts/compute_metrics.sh
 ```
 
 调参建议（起点）：
-- 采样：`dpmpp_3m` + `karras`，`cfg_rescale=0.4`，`x0_clip=1.5`
+- 采样：`dpmpp_3m` + `karras`，`cfg_rescale=0.3`，`x0_clip=2.0`
 - 若显存紧：降低 `batch_size`、`sampling_steps`，或关闭 SR
 - 若对抗不稳定：调大 `discriminator_start_steps`（如 1000）
 

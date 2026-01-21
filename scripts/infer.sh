@@ -11,13 +11,13 @@ CMD=(python infer.py
     --device "cuda"
     --vqgan2_ckpt "checkpoints/vqgan.pth"
     --dit_ckpt "checkpoints/dit.pth"
-    --sampling_steps 50
+    --sampling_steps 100
     --guidance_scale 1.0
     --sampler "dpmpp_3m"
     --schedule "karras"
     --rho 7.0
-    --cfg_rescale 0.4
-    --x0_clip 1.5
+    --cfg_rescale 0.3
+    --x0_clip 2.0
     --use_component_mask
     --use_edge_map
     --enable_sr
