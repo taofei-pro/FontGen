@@ -1,16 +1,15 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-TARGET_FONT_PATH="fonts/myfont.ttf"
-BLACKLEVEL=0.5
-TURDSIZE=2
-ALPHAMAX=1.0
-OPTTOLERANCE=0.2
+echo "[FontGen] Convert outputs to SVG"
 
+INPUT_DIR="${INPUT_DIR:-data/outputs}"
+OUTPUT_DIR="${OUTPUT_DIR:-svgs}"
 
-TARGET_FONT_NAME=$(basename "$TARGET_FONT_PATH" | sed -E 's/\.(ttf|otf)$//')
-
-INPUT_DIR="samples_${TARGET_FONT_NAME}/inference/gen"
-OUTPUT_DIR="svgs_${TARGET_FONT_NAME}"
+BLACKLEVEL="${BLACKLEVEL:-0.5}"
+TURDSIZE="${TURDSIZE:-2}"
+ALPHAMAX="${ALPHAMAX:-1.0}"
+OPTTOLERANCE="${OPTTOLERANCE:-0.2}"
 
 python convert_to_svg.py \
     --input_dir "$INPUT_DIR" \

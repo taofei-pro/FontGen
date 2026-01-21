@@ -2,11 +2,12 @@ import argparse
 from pathlib import Path
 
 import torch
+from tqdm import tqdm
 from torch.utils.data import DataLoader
 
 from configs.dit_config import DiTModelConfig
 from configs.structure_config import StructureConfig
-from configs.vqgan2_config import VQGAN2ModelConfig
+from configs.vqgan_config import VQGAN2ModelConfig
 from datasets.image_dataset import GlyphImageDataset
 from datasets.structure_dataset import StructureConditionDataset
 from models.dit.condition_encoder import ConditionEncoder
@@ -22,11 +23,11 @@ from utils.image.image_utils import convert_tensor_to_pil_images, save_images
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Next-gen inference pipeline")
     parser.add_argument("--condition_img_dir", type=str, default="data/target")
-    parser.add_argument("--output_dir", type=str, default="outputs_nextgen")
+    parser.add_argument("--output_dir", type=str, default="data/outputs")
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--num_workers", type=int, default=2)
     parser.add_argument("--device", type=str, default=None)
-    parser.add_argument("--vqgan2_ckpt", type=str, default="checkpoints/vqgan2.pth")
+    parser.add_argument("--vqgan2_ckpt", type=str, default="checkpoints/vqgan.pth")
     parser.add_argument("--dit_ckpt", type=str, default="checkpoints/dit.pth")
     parser.add_argument("--sampling_steps", type=int, default=50)
     parser.add_argument("--guidance_scale", type=float, default=1.0)
@@ -269,14 +270,17 @@ def main() -> None:
         + int(structure_config.use_edge_map)
         + int(structure_config.use_skeleton)
     )
-    condition_encoder = ConditionEncoder(
-        in_channels=condition_channels,
-        embed_dim=dit_config.token_dim,
-    ).to(device)
 
     vq_ckpt = torch.load(args.vqgan2_ckpt, map_location=device)
     tokenizer.load_state_dict(vq_ckpt["tokenizer"])
     tokenizer.eval()
+
+    downsample_factor = tokenizer.downsample_factor()
+    condition_encoder = ConditionEncoder(
+        in_channels=condition_channels,
+        embed_dim=dit_config.token_dim,
+        downsample_factor=downsample_factor,
+    ).to(device)
 
     dit_ckpt = torch.load(args.dit_ckpt, map_location=device)
     model.load_state_dict(dit_ckpt["dit"])
@@ -306,7 +310,7 @@ def main() -> None:
     scheduler = DiffusionScheduler(steps=dit_config.time_steps, device=device)
     output_dir = Path(args.output_dir)
 
-    for batch in loader:
+    for batch in tqdm(loader, desc="Sampling", unit="batch"):
         cond = batch["condition"].to(device)
         tokens = sample_tokens(
             model=model,

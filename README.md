@@ -54,7 +54,7 @@ DiT (扩散 Transformer 去噪)
 - ✅ 支持导出 tokenizer checkpoint
 
 2) DiT 采样/推理
-- ✅ 已提供 `infer_nextgen.py` 基础采样流程（DDIM）
+- ✅ 已提供 `infer.py` 基础采样流程（DDIM）
 - ✅ 支持 DDPM 采样
 - ✅ 支持 DPM++ 2M（`--sampler dpmpp_2m`）
 - ✅ 支持 DPM++ 2S（`--sampler dpmpp_2s`）
@@ -94,19 +94,19 @@ python train_vqgan2.py --max_steps 20
 python train_dit.py --max_steps 20
 
 # DiT 使用预训练 tokenizer
-python train_dit.py --vqgan2_ckpt checkpoints/vqgan2.pth --max_steps 20
+python train_dit.py --vqgan2_ckpt checkpoints/vqgan.pth --max_steps 20
 ```
 
 ---
 
-## 🧪 NextGen 推理与向量化（最小闭环）
+## 🧪 FontGen 推理与向量化（最小闭环）
 
 ```bash
 # 1) 推理生成
-bash scripts/infer_nextgen.sh
+bash scripts/infer.sh
 
 # 2) Potrace 矢量化
-bash scripts/convert_to_svg_nextgen.sh
+bash scripts/convert_to_svg.sh
 
 # 3) FontForge 打包字体（需系统安装 fontforge 命令）
 bash scripts/svg_to_font.sh
@@ -118,36 +118,33 @@ bash scripts/svg_to_font.sh
 
 ```bash
 # 1) 数据准备（M8 作为目标字）
+# 注意：已在 tokenizer 中加入下采样，默认使用 128x128
 bash scripts/analyze_font.sh
 bash scripts/prepare_dataset.sh
 bash scripts/extract_charset.sh
 
 # 2) VQGAN‑2 训练（建议先跑 5k~20k steps）
-python train_vqgan2.py \
-  --max_steps 5000 \
-  --perceptual_weight 0.4 \
-  --adversarial_weight 0.1 \
-  --discriminator_start_steps 500
+bash scripts/train_vqgan.sh
 
 # 3) DiT 训练（加载 tokenizer）
-python train_dit.py --vqgan2_ckpt checkpoints/vqgan2.pth --max_steps 10000
+bash scripts/train_dit.sh
 
-# 4) 推理（推荐采样）
-SAMPLER=dpmpp_2m SCHEDULE=karras CFG_RESCALE=0.7 X0_CLIP=1.0 \
-  bash scripts/infer_nextgen.sh
+# 4) 超分训练（EDSR）
+bash scripts/train_sr.sh
 
-# 5) 超分（可选）
-python train_sr.py --model_name edsr --max_steps 2000 --save_path checkpoints/sr_edsr.pth
-ENABLE_SR=1 SR_MODEL=edsr SR_CKPT=checkpoints/sr_edsr.pth \
-  bash scripts/infer_nextgen.sh
+# 5) 推理（已启用 SR）
+bash scripts/infer.sh
 
 # 6) 矢量化与字体输出
-bash scripts/convert_to_svg_nextgen.sh
+bash scripts/convert_to_svg.sh
 bash scripts/svg_to_font.sh
+
+# 7) 相似度评估（可选）
+bash scripts/compute_metrics.sh
 ```
 
 调参建议（起点）：
-- 采样：`SAMPLER=dpmpp_2m` 或 `dpmpp_3m`，`SCHEDULE=karras`，`CFG_RESCALE=0.7`，`X0_CLIP=1.0`
+- 采样：`dpmpp_3m` + `karras`，`cfg_rescale=0.4`，`x0_clip=1.5`
 - 若显存紧：降低 `batch_size`、`sampling_steps`，或关闭 SR
 - 若对抗不稳定：调大 `discriminator_start_steps`（如 1000）
 
@@ -155,7 +152,7 @@ bash scripts/svg_to_font.sh
 
 ## ✅ 完整性检查（当前状态）
 
-- NextGen 主流程已完整：数据准备 → VQGAN‑2 → DiT → 推理 → SR → 矢量化 → 字体输出
+- FontGen 主流程已完整：数据准备 → VQGAN‑2 → DiT → 推理 → SR → 矢量化 → 字体输出
 - 旧版 LDM 相关脚本已移除，避免误用
 
 ---

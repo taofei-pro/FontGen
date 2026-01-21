@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 
 from configs.dit_config import DiTDatasetConfig, DiTModelConfig, DiTTrainingConfig
 from configs.structure_config import StructureConfig
-from configs.vqgan2_config import VQGAN2ModelConfig
+from configs.vqgan_config import VQGAN2ModelConfig
 from datasets.dataset_utils import split_dataset
 from datasets.image_dataset import PairedGlyphImageDataset
 from datasets.structure_dataset import StructureConditionDataset
@@ -118,10 +118,6 @@ def main() -> None:
     if condition_channels == 0:
         raise ValueError("结构条件通道为0，请启用至少一个结构条件。")
 
-    condition_encoder = ConditionEncoder(
-        in_channels=condition_channels,
-        embed_dim=model_config.token_dim,
-    ).to(device)
     model = DiTModel(
         token_dim=model_config.token_dim,
         time_steps=model_config.time_steps,
@@ -144,6 +140,12 @@ def main() -> None:
         for param in tokenizer.parameters():
             param.requires_grad = False
         print(f"✅ 已加载 VQGAN-2 tokenizer: {args.vqgan2_ckpt}")
+    downsample_factor = tokenizer.downsample_factor()
+    condition_encoder = ConditionEncoder(
+        in_channels=condition_channels,
+        embed_dim=model_config.token_dim,
+        downsample_factor=downsample_factor,
+    ).to(device)
     print_model_params(model)
 
     optimizer = torch.optim.AdamW(
@@ -166,6 +168,12 @@ def main() -> None:
             tokens, vq_loss = tokenizer.encode(images)
             if not tokenizer.training:
                 vq_loss = torch.zeros_like(vq_loss)
+            if tokens.shape[-2] * tokens.shape[-1] > 128 * 128:
+                raise ValueError(
+                    "DiT token map is too large for Transformer attention. "
+                    "Please regenerate dataset with smaller img_size "
+                    "(e.g., 128x128) before training DiT."
+                )
 
             timesteps = torch.randint(
                 0, model_config.time_steps, (tokens.size(0),), device=device

@@ -54,7 +54,9 @@ class VQGAN2Tokenizer(nn.Module):
         self.token_dim = token_dim
         self.codebook_size = codebook_size
         self.encoder = nn.Sequential(
-            nn.Conv2d(in_channels, latent_dim, kernel_size=3, padding=1),
+            nn.Conv2d(in_channels, latent_dim, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(latent_dim, latent_dim, kernel_size=3, stride=2, padding=1),
             nn.ReLU(inplace=True),
             nn.Conv2d(latent_dim, token_dim, kernel_size=1),
         )
@@ -66,7 +68,13 @@ class VQGAN2Tokenizer(nn.Module):
         self.decoder = nn.Sequential(
             nn.Conv2d(token_dim, latent_dim, kernel_size=1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(latent_dim, in_channels, kernel_size=3, padding=1),
+            nn.ConvTranspose2d(
+                latent_dim, latent_dim, kernel_size=4, stride=2, padding=1
+            ),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(
+                latent_dim, in_channels, kernel_size=4, stride=2, padding=1
+            ),
         )
 
     def encode(self, images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -75,3 +83,16 @@ class VQGAN2Tokenizer(nn.Module):
 
     def decode(self, tokens: torch.Tensor) -> torch.Tensor:
         return self.decoder(tokens)
+
+    def downsample_factor(self, probe_size: int = 64) -> int:
+        """Estimate spatial downsample factor of the encoder."""
+        if probe_size <= 0:
+            raise ValueError("probe_size must be positive.")
+        device = next(self.parameters()).device
+        with torch.no_grad():
+            x = torch.zeros(1, self.encoder[0].in_channels, probe_size, probe_size, device=device)
+            z = self.encoder(x)
+        factor = probe_size // z.shape[-1]
+        if factor <= 0:
+            raise ValueError("Invalid downsample factor computed.")
+        return factor

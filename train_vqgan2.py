@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from configs.vqgan2_config import (
+from configs.vqgan_config import (
     VQGAN2DatasetConfig,
     VQGAN2ModelConfig,
     VQGAN2TrainingConfig,
@@ -147,6 +147,8 @@ def main() -> None:
                 and d_optimizer is not None
                 and step >= training_config.discriminator_start_steps
             )
+            adv_loss = torch.zeros_like(g_loss)
+            d_loss = torch.zeros_like(g_loss)
             if use_disc:
                 # Discriminator step
                 d_optimizer.zero_grad()

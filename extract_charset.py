@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 
 import torch
 
@@ -34,6 +35,16 @@ def extract_train_val_charset(
         val_loader=loader.loader.val,
         target_font_path=target_font_path,
         charset_root=dataset_config.splits_root,
+    )
+    train_count = len(loader.loader.train.dataset)
+    val_count = len(loader.loader.val.dataset)
+    target_font_name = Path(target_font_path).stem
+    print(f"✅ 已生成字集拆分：{target_font_name}")
+    print(
+        f"   - train: {train_count} samples -> {dataset_config.splits_root}/splits/{target_font_name}/train.txt"
+    )
+    print(
+        f"   - val:   {val_count} samples -> {dataset_config.splits_root}/splits/{target_font_name}/val.txt"
     )
 
 

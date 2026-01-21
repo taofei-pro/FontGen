@@ -9,7 +9,7 @@ from .ldm_config import (
 )
 from .metrics_config import MetricsConfig
 from .structure_config import StructureConfig
-from .vqgan2_config import VQGAN2DatasetConfig, VQGAN2ModelConfig, VQGAN2TrainingConfig
+from .vqgan_config import VQGAN2DatasetConfig, VQGAN2ModelConfig, VQGAN2TrainingConfig
 from .vqvae_config import VQVAEDatasetConfig, VQVAEModelConfig, VQVAETrainingConfig
 
 __all__ = [
