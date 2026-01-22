@@ -258,6 +258,8 @@ def main() -> None:
         commitment_cost=vqgan2_config.commitment_cost,
         multiscale=vqgan2_config.multiscale,
         coarse_downsample=vqgan2_config.coarse_downsample,
+        coarse_weight=vqgan2_config.coarse_weight,
+        tanh_output=vqgan2_config.tanh_output,
     ).to(device)
     dit_config = DiTModelConfig(token_dim=vqgan2_config.token_dim)
     model = DiTModel(

@@ -21,18 +21,20 @@ class VQGAN2ModelConfig:
     commitment_cost: float = 0.25
     multiscale: bool = True
     coarse_downsample: int = 2
+    coarse_weight: float = 0.5
+    tanh_output: bool = True
     use_vqgan: bool = True
 
 
 @dataclass
 class VQGAN2TrainingConfig:
     batch_size: int = 4
-    learning_rate: float = 4e-4
+    learning_rate: float = 2e-4
     num_epochs: int = 300
     warmup_epochs: int = 20
     weight_decay: float = 1e-4
     discriminator_lr: float = 2e-4
     perceptual_weight: float = 0.4
-    adversarial_weight: float = 0.1
-    discriminator_start_steps: int = 500
+    adversarial_weight: float = 0.05
+    discriminator_start_steps: int = 1000
     model_save_path: str = "checkpoints/vqgan.pth"

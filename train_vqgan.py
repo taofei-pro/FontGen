@@ -98,6 +98,8 @@ def main() -> None:
         commitment_cost=model_config.commitment_cost,
         multiscale=model_config.multiscale,
         coarse_downsample=model_config.coarse_downsample,
+        coarse_weight=model_config.coarse_weight,
+        tanh_output=model_config.tanh_output,
     ).to(device)
     recon_loss_fn = VQGAN2Loss(
         perceptual_weight=training_config.perceptual_weight
@@ -172,7 +174,7 @@ def main() -> None:
 
             if step % 10 == 0:
                 print(
-                    f"[VQGAN2] step={step} "
+                    f"[VQGAN] step={step} "
                     f"recon={losses['l1'].item():.6f} "
                     f"perc={losses['perceptual'].item():.6f} "
                     f"vq={vq_loss.item():.6f} "

@@ -75,6 +75,8 @@ class VQGAN2Tokenizer(nn.Module):
         commitment_cost: float = 0.25,
         multiscale: bool = True,
         coarse_downsample: int = 2,
+        coarse_weight: float = 0.5,
+        tanh_output: bool = True,
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
@@ -83,6 +85,8 @@ class VQGAN2Tokenizer(nn.Module):
         self.codebook_size = codebook_size
         self.use_multiscale = multiscale
         self.coarse_downsample = coarse_downsample
+        self.coarse_weight = coarse_weight
+        self.tanh_output = tanh_output
         self.enc_head = nn.Conv2d(in_channels, base_channels, kernel_size=3, padding=1)
         self.enc_block1 = nn.Sequential(
             MultiScaleBlock(base_channels),
@@ -159,7 +163,7 @@ class VQGAN2Tokenizer(nn.Module):
         quant_coarse_up = F.interpolate(
             quant_coarse, size=quant_fine.shape[-2:], mode="nearest"
         )
-        return quant_fine + quant_coarse_up, loss_fine + loss_coarse
+        return quant_fine + self.coarse_weight * quant_coarse_up, loss_fine + loss_coarse
 
     def decode(self, tokens: torch.Tensor) -> torch.Tensor:
         x = self.dec_in(tokens)
@@ -168,7 +172,8 @@ class VQGAN2Tokenizer(nn.Module):
         x = self.dec_block2(x)
         x = self.dec_up2(x)
         x = self.dec_block1(x)
-        return self.dec_out(x)
+        x = self.dec_out(x)
+        return torch.tanh(x) if self.tanh_output else x
 
     def downsample_factor(self, probe_size: int = 64) -> int:
         """Estimate spatial downsample factor of the encoder."""

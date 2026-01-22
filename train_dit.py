@@ -137,6 +137,8 @@ def main() -> None:
         commitment_cost=vqgan2_config.commitment_cost,
         multiscale=vqgan2_config.multiscale,
         coarse_downsample=vqgan2_config.coarse_downsample,
+        coarse_weight=vqgan2_config.coarse_weight,
+        tanh_output=vqgan2_config.tanh_output,
     ).to(device)
     if args.vqgan2_ckpt:
         checkpoint = torch.load(args.vqgan2_ckpt, map_location=device)

@@ -4,7 +4,7 @@ set -euo pipefail
 echo "[FontGen] Train VQGAN-2"
 
 python train_vqgan.py \
-  --max_steps 20000 \
+  --max_steps 40000 \
   --perceptual_weight 0.4 \
-  --adversarial_weight 0.1 \
-  --discriminator_start_steps 500
+  --adversarial_weight 0.05 \
+  --discriminator_start_steps 1000
