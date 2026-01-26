@@ -40,6 +40,7 @@ DiT (扩散 Transformer 去噪)
 - 支持 `train_vqgan.py` 训练并保存权重
 - ✅ 多尺度量化（fine + coarse）以提升细节保真
 - ✅ coarse 权重=0.5，decoder 输出使用 tanh 约束范围
+- ✅ 前景加权重建损失（抑制“全白”塌陷）
 
 3) DiT 训练流程
 - 已接入 VQGAN‑2 tokenizer

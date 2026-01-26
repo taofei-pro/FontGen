@@ -102,7 +102,8 @@ def main() -> None:
         tanh_output=model_config.tanh_output,
     ).to(device)
     recon_loss_fn = VQGAN2Loss(
-        perceptual_weight=training_config.perceptual_weight
+        perceptual_weight=training_config.perceptual_weight,
+        foreground_weight=training_config.foreground_weight,
     ).to(device)
 
     discriminator = None

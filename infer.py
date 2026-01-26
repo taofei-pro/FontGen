@@ -334,11 +334,23 @@ def main() -> None:
         )
         images = tokenizer.decode(tokens)
 
+        if images.numel() > 0:
+            img_min = images.min().item()
+            img_max = images.max().item()
+            img_mean = images.mean().item()
+            print(f"[Infer] pre-SR stats min={img_min:.3f} max={img_max:.3f} mean={img_mean:.3f}")
+
         if sr_model is not None:
             if args.sr_tile:
                 images = tile_infer(sr_model, images, tile_size=args.sr_tile_size)
             else:
                 images = sr_model(images)
+            images = images.clamp(-1.0, 1.0)
+            if images.numel() > 0:
+                img_min = images.min().item()
+                img_max = images.max().item()
+                img_mean = images.mean().item()
+                print(f"[Infer] post-SR stats min={img_min:.3f} max={img_max:.3f} mean={img_mean:.3f}")
 
         pil_images = convert_tensor_to_pil_images(images)
         if not isinstance(pil_images, list):
