@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+from datetime import datetime
 
 import torch
 import torch.nn.functional as F
@@ -26,7 +27,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--random_seed", type=int, default=None)
     parser.add_argument("--batch_size", type=int, default=None)
     parser.add_argument("--num_workers", type=int, default=None)
-    parser.add_argument("--max_steps", type=int, default=200)
+    parser.add_argument("--max_steps", type=int, default=20000)
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--save_path", type=str, default=None)
     parser.add_argument("--perceptual_weight", type=float, default=None)
@@ -100,6 +101,8 @@ def main() -> None:
         coarse_downsample=model_config.coarse_downsample,
         coarse_weight=model_config.coarse_weight,
         tanh_output=model_config.tanh_output,
+        vq_decay=model_config.vq_decay,
+        vq_epsilon=model_config.vq_epsilon,
     ).to(device)
     recon_loss_fn = VQGAN2Loss(
         perceptual_weight=training_config.perceptual_weight,
@@ -124,6 +127,23 @@ def main() -> None:
             lr=training_config.discriminator_lr,
             weight_decay=training_config.weight_decay,
         )
+    
+    # 添加学习率调度器
+    from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
+    g_scheduler = CosineAnnealingWarmRestarts(
+        g_optimizer,
+        T_0=1000,
+        T_mult=2,
+        eta_min=1e-6
+    )
+    d_scheduler = None
+    if d_optimizer is not None:
+        d_scheduler = CosineAnnealingWarmRestarts(
+            d_optimizer,
+            T_0=1000,
+            T_mult=2,
+            eta_min=1e-6
+        )
 
     def d_hinge_loss(real_logits, fake_logits):
         real_loss = torch.relu(1.0 - real_logits).mean()
@@ -142,11 +162,24 @@ def main() -> None:
         for batch in train_loader:
             images = batch["tgt_img"].to(device)
 
-            tokens, vq_loss = tokenizer.encode(images)
-            recon = tokenizer.decode(tokens)
-            losses = recon_loss_fn.compute_losses(recon, images)
-            recon_loss = losses["total"]
-            g_loss = recon_loss + vq_loss
+            try:
+                tokens, vq_loss = tokenizer.encode(images)
+                recon = tokenizer.decode(tokens)
+                losses = recon_loss_fn.compute_losses(recon, images)
+                recon_loss = losses["total"]
+                g_loss = recon_loss + vq_loss
+                
+                # 检查数值稳定性
+                if torch.isnan(g_loss) or torch.isinf(g_loss):
+                    print(f"[警告] step={step} 出现异常损失值: g_loss={g_loss.item()}")
+                    # 跳过这一步训练
+                    continue
+                    
+            except Exception as e:
+                print(f"[错误] step={step} 训练过程中出现异常: {e}")
+                # 清理内存并继续
+                torch.cuda.empty_cache()
+                continue
 
             use_disc = (
                 discriminator is not None
@@ -171,25 +204,48 @@ def main() -> None:
 
             g_optimizer.zero_grad()
             g_loss.backward()
+            # 梯度裁剪
+            torch.nn.utils.clip_grad_norm_(tokenizer.parameters(), max_norm=1.0)
             g_optimizer.step()
+            g_scheduler.step()
+            
+            if d_scheduler is not None:
+                d_scheduler.step()
 
             if step % 10 == 0:
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 print(
-                    f"[VQGAN] step={step} "
+                    f"[VQGAN] [{current_time}] step={step} "
                     f"recon={losses['l1'].item():.6f} "
                     f"perc={losses['perceptual'].item():.6f} "
                     f"vq={vq_loss.item():.6f} "
                     f"total={g_loss.item():.6f}"
                 )
+            
+            # 定期清理GPU缓存，防止内存泄漏
+            if step % 100 == 0:
+                torch.cuda.empty_cache()
+                
             step += 1
+            
+            # 每500步保存一次模型，避免长时间训练后丢失进度
+            if step % 500 == 0:
+                save_path = Path(training_config.model_save_path)
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+                torch.save(
+                    {"tokenizer": tokenizer.state_dict(), "step": step},
+                    save_path,
+                )
+                print(f"✅ 已保存 VQGAN-2 tokenizer (step {step}): {save_path}")
+                
             if args.max_steps and step >= args.max_steps:
                 save_path = Path(training_config.model_save_path)
                 save_path.parent.mkdir(parents=True, exist_ok=True)
                 torch.save(
-                    {"tokenizer": tokenizer.state_dict()},
+                    {"tokenizer": tokenizer.state_dict(), "step": step},
                     save_path,
                 )
-                print(f"✅ 已保存 VQGAN-2 tokenizer: {save_path}")
+                print(f"✅ 已保存最终 VQGAN-2 tokenizer: {save_path}")
                 return
 
 

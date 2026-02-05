@@ -26,7 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--random_seed", type=int, default=None)
     parser.add_argument("--batch_size", type=int, default=None)
     parser.add_argument("--num_workers", type=int, default=None)
-    parser.add_argument("--max_steps", type=int, default=100)
+    parser.add_argument("--max_steps", type=int, default=40000)
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument(
         "--vqgan2_ckpt",
@@ -139,6 +139,8 @@ def main() -> None:
         coarse_downsample=vqgan2_config.coarse_downsample,
         coarse_weight=vqgan2_config.coarse_weight,
         tanh_output=vqgan2_config.tanh_output,
+        vq_decay=vqgan2_config.vq_decay,
+        vq_epsilon=vqgan2_config.vq_epsilon,
     ).to(device)
     if args.vqgan2_ckpt:
         checkpoint = torch.load(args.vqgan2_ckpt, map_location=device)
@@ -160,6 +162,15 @@ def main() -> None:
         + list(condition_encoder.parameters())
         + (list(tokenizer.parameters()) if tokenizer.training else []),
         lr=training_config.learning_rate,
+    )
+
+    # 添加学习率调度器
+    from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
+    lr_scheduler = CosineAnnealingWarmRestarts(
+        optimizer,
+        T_0=2000,
+        T_mult=2,
+        eta_min=1e-6
     )
 
     scheduler = DiffusionScheduler(steps=model_config.time_steps, device=device)
@@ -196,7 +207,13 @@ def main() -> None:
             loss = F.mse_loss(pred_noise, noise) + vq_loss
             optimizer.zero_grad()
             loss.backward()
+            # 梯度裁剪
+            torch.nn.utils.clip_grad_norm_(
+                list(model.parameters()) + list(condition_encoder.parameters()),
+                max_norm=1.0
+            )
             optimizer.step()
+            lr_scheduler.step()
 
             if step % 10 == 0:
                 print(

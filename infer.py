@@ -260,6 +260,8 @@ def main() -> None:
         coarse_downsample=vqgan2_config.coarse_downsample,
         coarse_weight=vqgan2_config.coarse_weight,
         tanh_output=vqgan2_config.tanh_output,
+        vq_decay=vqgan2_config.vq_decay,
+        vq_epsilon=vqgan2_config.vq_epsilon,
     ).to(device)
     dit_config = DiTModelConfig(token_dim=vqgan2_config.token_dim)
     model = DiTModel(
@@ -332,6 +334,10 @@ def main() -> None:
             cfg_rescale=args.cfg_rescale,
             x0_clip=args.x0_clip,
         )
+        
+        # Debug tokens
+        print(f"[Infer] tokens stats min={tokens.min().item():.3f} max={tokens.max().item():.3f} mean={tokens.mean().item():.3f}")
+        
         images = tokenizer.decode(tokens)
 
         if images.numel() > 0:

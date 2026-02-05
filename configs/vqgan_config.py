@@ -17,13 +17,15 @@ class VQGAN2ModelConfig:
     base_channels: int = 128
     latent_dim: int = 4
     token_dim: int = 256
-    codebook_size: int = 512
-    commitment_cost: float = 0.25
+    codebook_size: int = 256
+    commitment_cost: float = 0.1
     multiscale: bool = True
     coarse_downsample: int = 2
     coarse_weight: float = 0.5
     tanh_output: bool = True
     use_vqgan: bool = True
+    vq_decay: float = 0.99
+    vq_epsilon: float = 1e-5
 
 
 @dataclass

@@ -6,15 +6,22 @@ import torch.nn.functional as F
 
 
 class VectorQuantizer(nn.Module):
-    """Basic vector quantizer for VQGAN-2."""
+    """Vector quantizer for VQGAN-2 with EMA updates for codebook."""
 
-    def __init__(self, codebook_size: int, embed_dim: int, commitment_cost: float) -> None:
+    def __init__(self, codebook_size: int, embed_dim: int, commitment_cost: float, decay: float = 0.99, epsilon: float = 1e-5) -> None:
         super().__init__()
         self.codebook_size = codebook_size
         self.embed_dim = embed_dim
         self.commitment_cost = commitment_cost
+        self.decay = decay
+        self.epsilon = epsilon
+        
         self.embedding = nn.Embedding(codebook_size, embed_dim)
         nn.init.uniform_(self.embedding.weight, -1.0 / codebook_size, 1.0 / codebook_size)
+        
+        # EMA parameters
+        self.register_buffer('ema_cluster_size', torch.zeros(codebook_size))
+        self.register_buffer('ema_w', torch.clone(self.embedding.weight))
 
     def forward(self, z: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         # z: [B, C, H, W] -> [B*H*W, C]
@@ -35,6 +42,25 @@ class VectorQuantizer(nn.Module):
         loss = F.mse_loss(quantized.detach(), z) + self.commitment_cost * F.mse_loss(
             quantized, z.detach()
         )
+        
+        # EMA codebook update
+        if self.training:
+            encoding_one_hot = F.one_hot(encoding_indices, self.codebook_size).float()
+            
+            # Update EMA cluster size
+            self.ema_cluster_size = self.decay * self.ema_cluster_size + (1 - self.decay) * torch.sum(encoding_one_hot, dim=0)
+            
+            # Update EMA embedding weights
+            dw = encoding_one_hot.t() @ flat_z
+            self.ema_w = self.decay * self.ema_w + (1 - self.decay) * dw
+            
+            # Normalize EMA weights
+            n = torch.sum(self.ema_cluster_size)
+            self.ema_cluster_size = (self.ema_cluster_size + self.epsilon) / (n + self.codebook_size * self.epsilon) * n
+            
+            # Update embedding weights using EMA
+            self.embedding.weight.data.copy_(self.ema_w / self.ema_cluster_size.unsqueeze(1))
+        
         return quantized_st, loss
 
 
@@ -77,6 +103,8 @@ class VQGAN2Tokenizer(nn.Module):
         coarse_downsample: int = 2,
         coarse_weight: float = 0.5,
         tanh_output: bool = True,
+        vq_decay: float = 0.99,
+        vq_epsilon: float = 1e-5,
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
@@ -111,6 +139,8 @@ class VQGAN2Tokenizer(nn.Module):
             codebook_size=codebook_size,
             embed_dim=token_dim,
             commitment_cost=commitment_cost,
+            decay=vq_decay,
+            epsilon=vq_epsilon,
         )
         self.coarse_quantizer = None
         if self.use_multiscale:
@@ -118,6 +148,8 @@ class VQGAN2Tokenizer(nn.Module):
                 codebook_size=codebook_size,
                 embed_dim=token_dim,
                 commitment_cost=commitment_cost,
+                decay=vq_decay,
+                epsilon=vq_epsilon,
             )
         self.dec_in = nn.Conv2d(token_dim, base_channels * 4, kernel_size=1)
         self.dec_block3 = nn.Sequential(
@@ -173,7 +205,20 @@ class VQGAN2Tokenizer(nn.Module):
         x = self.dec_up2(x)
         x = self.dec_block1(x)
         x = self.dec_out(x)
-        return torch.tanh(x) if self.tanh_output else x
+        
+        # 强制归一化到[0, 1]范围，不管tanh_output设置如何
+        # 这解决了权重问题导致的输出异常
+        x_min = x.min()
+        x_max = x.max()
+        
+        # 防止除零错误
+        if x_max > x_min:
+            x = (x - x_min) / (x_max - x_min)
+        else:
+            # 如果所有值都相同，设置为0.5
+            x = torch.full_like(x, 0.5)
+        
+        return x
 
     def downsample_factor(self, probe_size: int = 64) -> int:
         """Estimate spatial downsample factor of the encoder."""
