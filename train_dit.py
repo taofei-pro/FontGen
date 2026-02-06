@@ -26,10 +26,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--random_seed", type=int, default=None)
     parser.add_argument("--batch_size", type=int, default=None)
     parser.add_argument("--num_workers", type=int, default=None)
-    parser.add_argument("--max_steps", type=int, default=500)
+    parser.add_argument("--max_steps", type=int, default=None)
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument(
-        "--vqgan2_ckpt",
+        "--vqgan_ckpt",
         type=str,
         default=None,
         help="Path to pretrained VQGAN-2 tokenizer checkpoint",
@@ -142,13 +142,13 @@ def main() -> None:
         vq_decay=vqgan2_config.vq_decay,
         vq_epsilon=vqgan2_config.vq_epsilon,
     ).to(device)
-    if args.vqgan2_ckpt:
-        checkpoint = torch.load(args.vqgan2_ckpt, map_location=device)
+    if args.vqgan_ckpt:
+        checkpoint = torch.load(args.vqgan_ckpt, map_location=device)
         tokenizer.load_state_dict(checkpoint["tokenizer"])
         tokenizer.eval()
         for param in tokenizer.parameters():
             param.requires_grad = False
-        print(f"✅ 已加载 VQGAN-2 tokenizer: {args.vqgan2_ckpt}")
+        print(f"✅ 已加载 VQGAN-2 tokenizer: {args.vqgan_ckpt}")
     downsample_factor = tokenizer.downsample_factor()
     condition_encoder = ConditionEncoder(
         in_channels=condition_channels,

@@ -200,17 +200,15 @@ class VQGAN2Tokenizer(nn.Module):
     def decode(self, tokens: torch.Tensor) -> torch.Tensor:
         x = self.dec_in(tokens)
         x = self.dec_block3(x)
-        x = self.dec_up1(x)
+        x = F.leaky_relu(self.dec_up1(x), negative_slope=0.2)
         x = self.dec_block2(x)
-        x = self.dec_up2(x)
+        x = F.leaky_relu(self.dec_up2(x), negative_slope=0.2)
         x = self.dec_block1(x)
         x = self.dec_out(x)
+        x = torch.clamp(x, min=-5, max=5)
         
         if self.tanh_output:
             x = torch.tanh(x)  # [-1, 1]
-            x = (x + 1) / 2   # [0, 1]
-        else:
-            x = torch.sigmoid(x)  # [0, 1]
         return x
 
     def downsample_factor(self, probe_size: int = 64) -> int:

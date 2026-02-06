@@ -31,7 +31,7 @@ class VQGAN2ModelConfig:
 @dataclass
 class VQGAN2TrainingConfig:
     batch_size: int = 4
-    learning_rate: float = 2e-4
+    learning_rate: float = 5e-5
     num_epochs: int = 300
     warmup_epochs: int = 20
     weight_decay: float = 1e-4

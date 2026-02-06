@@ -27,10 +27,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--num_workers", type=int, default=2)
     parser.add_argument("--device", type=str, default=None)
-    parser.add_argument("--vqgan2_ckpt", type=str, default="checkpoints/vqgan.pth")
+    parser.add_argument("--vqgan_ckpt", type=str, default="checkpoints/vqgan.pth")
     parser.add_argument("--dit_ckpt", type=str, default="checkpoints/dit.pth")
-    parser.add_argument("--sampling_steps", type=int, default=50)
-    parser.add_argument("--guidance_scale", type=float, default=1.0)
+    parser.add_argument("--sampling_steps", type=int, default=100)
+    parser.add_argument("--guidance_scale", type=float, default=5.0)
     parser.add_argument("--cfg_rescale", type=float, default=0.0)
     parser.add_argument("--x0_clip", type=float, default=None)
     parser.add_argument(
@@ -280,7 +280,7 @@ def main() -> None:
         + int(structure_config.use_skeleton)
     )
 
-    vq_ckpt = torch.load(args.vqgan2_ckpt, map_location=device)
+    vq_ckpt = torch.load(args.vqgan_ckpt, map_location=device)
     tokenizer.load_state_dict(vq_ckpt["tokenizer"])
     tokenizer.eval()
 

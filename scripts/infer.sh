@@ -9,10 +9,10 @@ CMD=(python infer.py
     --batch_size 4
     --num_workers 2
     --device "cuda"
-    --vqgan2_ckpt "checkpoints/vqgan.pth"
+    --vqgan_ckpt "checkpoints/vqgan.pth"
     --dit_ckpt "checkpoints/dit.pth"
     --sampling_steps 100
-    --guidance_scale 1.0
+    --guidance_scale 5.0
     --sampler "dpmpp_3m"
     --schedule "karras"
     --rho 7.0

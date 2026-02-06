@@ -99,7 +99,7 @@ python train_vqgan.py --max_steps 20
 python train_dit.py --max_steps 20
 
 # DiT 使用预训练 tokenizer
-python train_dit.py --vqgan2_ckpt checkpoints/vqgan.pth --max_steps 20
+python train_dit.py --vqgan_ckpt checkpoints/vqgan.pth --max_steps 20
 ```
 
 ---
