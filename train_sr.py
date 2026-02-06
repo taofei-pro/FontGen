@@ -16,7 +16,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--img_dir", type=str, default="data/target")
     parser.add_argument("--batch_size", type=int, default=None)
     parser.add_argument("--num_workers", type=int, default=2)
-    parser.add_argument("--max_steps", type=int, default=200)
+    parser.add_argument("--max_steps", type=int, default=1000)
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--scale", type=int, default=None)
     parser.add_argument("--model_name", type=str, default=None)

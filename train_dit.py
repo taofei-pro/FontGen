@@ -26,7 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--random_seed", type=int, default=None)
     parser.add_argument("--batch_size", type=int, default=None)
     parser.add_argument("--num_workers", type=int, default=None)
-    parser.add_argument("--max_steps", type=int, default=40000)
+    parser.add_argument("--max_steps", type=int, default=500)
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument(
         "--vqgan2_ckpt",

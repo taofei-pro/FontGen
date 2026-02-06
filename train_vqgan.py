@@ -27,7 +27,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--random_seed", type=int, default=None)
     parser.add_argument("--batch_size", type=int, default=None)
     parser.add_argument("--num_workers", type=int, default=None)
-    parser.add_argument("--max_steps", type=int, default=20000)
+    parser.add_argument("--max_steps", type=int, default=1000)
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--save_path", type=str, default=None)
     parser.add_argument("--perceptual_weight", type=float, default=None)

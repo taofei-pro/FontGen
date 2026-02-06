@@ -27,9 +27,8 @@ class VQGAN2Loss(nn.Module):
         return x
 
     def _weighted_l1(self, recon: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        # target is normalized to [-1, 1], map to [0, 1]
-        target_01 = (target + 1.0) * 0.5
-        weight = 1.0 + self.foreground_weight * (1.0 - target_01)
+        # target is in [0, 1] range
+        weight = 1.0 + self.foreground_weight * (1.0 - target)
         return (weight * (recon - target).abs()).mean()
 
     def compute_losses(self, recon: torch.Tensor, target: torch.Tensor) -> dict[str, torch.Tensor]:

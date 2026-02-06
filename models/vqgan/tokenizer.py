@@ -206,18 +206,11 @@ class VQGAN2Tokenizer(nn.Module):
         x = self.dec_block1(x)
         x = self.dec_out(x)
         
-        # 强制归一化到[0, 1]范围，不管tanh_output设置如何
-        # 这解决了权重问题导致的输出异常
-        x_min = x.min()
-        x_max = x.max()
-        
-        # 防止除零错误
-        if x_max > x_min:
-            x = (x - x_min) / (x_max - x_min)
+        if self.tanh_output:
+            x = torch.tanh(x)  # [-1, 1]
+            x = (x + 1) / 2   # [0, 1]
         else:
-            # 如果所有值都相同，设置为0.5
-            x = torch.full_like(x, 0.5)
-        
+            x = torch.sigmoid(x)  # [0, 1]
         return x
 
     def downsample_factor(self, probe_size: int = 64) -> int:

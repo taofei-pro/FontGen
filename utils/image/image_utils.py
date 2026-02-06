@@ -71,6 +71,10 @@ def convert_to_pil(
     """
     Convert a normalized tensor to a PIL image.
     """
+    # Check if image is already in [0, 1] range
+    if image.min() >= 0 and image.max() <= 1:
+        return T.ToPILImage()(image)
+    # Otherwise, assume it's in [-1, 1] range
     image = image.clamp(-1, 1)
     image = image * 0.5 + 0.5
     return T.ToPILImage()(image)
