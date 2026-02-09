@@ -29,22 +29,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--vqgan_ckpt", type=str, default="checkpoints/vqgan.pth")
     parser.add_argument("--dit_ckpt", type=str, default="checkpoints/dit.pth")
-    parser.add_argument("--sampling_steps", type=int, default=100)
-    parser.add_argument("--guidance_scale", type=float, default=5.0)
-    parser.add_argument("--cfg_rescale", type=float, default=0.0)
-    parser.add_argument("--x0_clip", type=float, default=None)
+    parser.add_argument("--sampling_steps", type=int, default=200)  # 增加采样步数，减少噪声残留
+    parser.add_argument("--guidance_scale", type=float, default=7.0)  # 提高引导尺度，增强条件信息利用
+    parser.add_argument("--cfg_rescale", type=float, default=0.7)  # 启用CFG重缩放，提高图像质量
+    parser.add_argument("--x0_clip", type=float, default=1.0)  # 启用x0裁剪，稳定生成过程
     parser.add_argument(
         "--schedule",
         type=str,
         choices=["linear", "karras"],
-        default="linear",
+        default="karras",  # 使用Karras调度器，提高采样稳定性
     )
-    parser.add_argument("--rho", type=float, default=7.0)
+    parser.add_argument("--rho", type=float, default=7.0)  # Karras调度器参数
     parser.add_argument(
         "--sampler",
         type=str,
         choices=["ddim", "ddpm", "dpmpp_2m", "dpmpp_2s", "dpmpp_3m"],
-        default="ddim",
+        default="dpmpp_2m",  # 使用DPM++ 2M采样器，平衡速度和质量
     )
     parser.add_argument("--use_component_mask", action="store_true")
     parser.add_argument("--use_edge_map", action="store_true")
@@ -344,45 +344,14 @@ def main() -> None:
         
         images = tokenizer.decode(tokens)
 
-        # 对生成的图像进行全面优化，减少黑色干扰
+        # 简化后处理，重点调整亮度确保字符可见
         images = images.clamp(-1.0, 1.0)
         
-        # 1. 调整亮度，将图像均值调整到更合适的水平
+        # 调整亮度，大幅提高图像亮度使字符可见
         current_mean = images.mean()
-        target_mean = -0.2  # 稍微提高亮度，减少暗色干扰
+        target_mean = 0.3  # 提高亮度目标以增强字符可见性
         brightness_adjustment = (target_mean - current_mean) * 1.0
         images = images + brightness_adjustment
-        images = images.clamp(-1.0, 1.0)
-        
-        # 2. 应用更严格的阈值处理，去除更多黑色噪声
-        # 将低于阈值的像素置为黑色，高于阈值的像素线性映射
-        threshold = -0.05
-        mask = images < threshold
-        images = torch.where(mask, torch.tensor(-1.0, device=images.device), images)
-        
-        # 3. 应用中值滤波，有效去除椒盐噪声
-        from torchvision.transforms import functional as F
-        # 将图像转换为[0, 1]范围进行滤波
-        images_01 = (images + 1.0) / 2.0
-        # 定义中值滤波函数
-        def median_filter(img, kernel_size=3):
-            # 对每个图像应用中值滤波
-            img_np = img.cpu().numpy()
-            from scipy.ndimage import median_filter as scipy_median
-            filtered = scipy_median(img_np, size=(1, kernel_size, kernel_size))
-            return torch.from_numpy(filtered).to(img.device)
-        # 应用中值滤波
-        images_01 = median_filter(images_01, kernel_size=3)
-        # 转换回[-1, 1]范围
-        images = images_01 * 2.0 - 1.0
-        images = images.clamp(-1.0, 1.0)
-        
-        # 4. 再次应用阈值处理，确保黑色区域干净
-        images = torch.where(images < -0.3, torch.tensor(-1.0, device=images.device), images)
-        
-        # 5. 适度增强对比度，使轮廓更清晰
-        contrast_factor = 1.5
-        images = (images - images.mean()) * contrast_factor + images.mean()
         images = images.clamp(-1.0, 1.0)
 
         if images.numel() > 0:

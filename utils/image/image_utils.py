@@ -69,7 +69,7 @@ def convert_to_pil(
     image: Tensor,
 ) -> Image.Image:
     """
-    Convert a normalized tensor to a PIL image with enhanced denoising and binarization.
+    Convert a normalized tensor to a PIL image with minimal processing to preserve character details.
     """
     # Check if image is already in [0, 1] range
     if image.min() >= 0 and image.max() <= 1:
@@ -83,30 +83,15 @@ def convert_to_pil(
     # Convert to grayscale
     pil_image = pil_image.convert('L')
     
-    # Apply adaptive thresholding to create clean binary image
+    # Minimal processing to preserve character details
+    # Only apply very light Gaussian blur to reduce extreme noise
     from PIL import ImageFilter
-    # First, apply a small Gaussian blur to reduce high-frequency noise
     pil_image = pil_image.filter(ImageFilter.GaussianBlur(radius=0.5))
     
-    # Use adaptive thresholding to separate text from background
-    import numpy as np
-    img_array = np.array(pil_image)
-    # Calculate local threshold using Otsu's method
-    from scipy.ndimage import median_filter
-    # Apply median filter again for extra noise reduction
-    img_array = median_filter(img_array, size=2)
-    # Otsu's thresholding
-    from skimage.filters import threshold_otsu
-    threshold = threshold_otsu(img_array)
-    binary_img = img_array > threshold
-    
-    # Convert back to PIL image
-    pil_image = Image.fromarray((binary_img * 255).astype(np.uint8))
-    
-    # Apply light sharpening to enhance edges
+    # Apply moderate contrast enhancement
     from PIL import ImageEnhance
-    sharpener = ImageEnhance.Sharpness(pil_image)
-    pil_image = sharpener.enhance(2.0)  # Moderate sharpening for edge clarity
+    enhancer = ImageEnhance.Contrast(pil_image)
+    pil_image = enhancer.enhance(1.2)  # Moderate contrast enhancement for better character visibility
     
     return pil_image
 
