@@ -1,4 +1,5 @@
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 import torch
@@ -16,7 +17,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--img_dir", type=str, default="data/target")
     parser.add_argument("--batch_size", type=int, default=None)
     parser.add_argument("--num_workers", type=int, default=2)
-    parser.add_argument("--max_steps", type=int, default=1000)
+    parser.add_argument("--max_steps", type=int, default=10000)
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--scale", type=int, default=None)
     parser.add_argument("--model_name", type=str, default=None)
@@ -78,7 +79,7 @@ def main() -> None:
             optimizer.step()
 
             if step % 10 == 0:
-                print(f"[SR] step={step} loss={loss.item():.6f}")
+                print(f"[SR] [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] step={step} loss={loss.item():.6f}")
             step += 1
             if args.max_steps and step >= args.max_steps:
                 save_path = Path(args.save_path)

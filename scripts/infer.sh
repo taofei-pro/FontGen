@@ -6,12 +6,12 @@ echo "[FontGen] Inference"
 CMD=(python infer.py
     --condition_img_dir "data/target"
     --output_dir "data/outputs"
-    --batch_size 4
-    --num_workers 2
+    --batch_size 1
+    --num_workers 1
     --device "cuda"
     --vqgan_ckpt "checkpoints/vqgan.pth"
     --dit_ckpt "checkpoints/dit.pth"
-    --sampling_steps 100
+    --sampling_steps 10
     --guidance_scale 5.0
     --sampler "dpmpp_3m"
     --schedule "karras"
@@ -23,6 +23,7 @@ CMD=(python infer.py
     --enable_sr
     --sr_ckpt "checkpoints/sr_edsr.pth"
     --sr_model "edsr"
+    --num_chars 20
 )
 
 echo "Running: ${CMD[*]}"

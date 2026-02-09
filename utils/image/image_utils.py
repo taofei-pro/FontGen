@@ -69,15 +69,46 @@ def convert_to_pil(
     image: Tensor,
 ) -> Image.Image:
     """
-    Convert a normalized tensor to a PIL image.
+    Convert a normalized tensor to a PIL image with enhanced denoising and binarization.
     """
     # Check if image is already in [0, 1] range
     if image.min() >= 0 and image.max() <= 1:
-        return T.ToPILImage()(image)
-    # Otherwise, assume it's in [-1, 1] range
-    image = image.clamp(-1, 1)
-    image = image * 0.5 + 0.5
-    return T.ToPILImage()(image)
+        pil_image = T.ToPILImage()(image)
+    else:
+        # Otherwise, assume it's in [-1, 1] range
+        image = image.clamp(-1, 1)
+        image = image * 0.5 + 0.5
+        pil_image = T.ToPILImage()(image)
+    
+    # Convert to grayscale
+    pil_image = pil_image.convert('L')
+    
+    # Apply adaptive thresholding to create clean binary image
+    from PIL import ImageFilter
+    # First, apply a small Gaussian blur to reduce high-frequency noise
+    pil_image = pil_image.filter(ImageFilter.GaussianBlur(radius=0.5))
+    
+    # Use adaptive thresholding to separate text from background
+    import numpy as np
+    img_array = np.array(pil_image)
+    # Calculate local threshold using Otsu's method
+    from scipy.ndimage import median_filter
+    # Apply median filter again for extra noise reduction
+    img_array = median_filter(img_array, size=2)
+    # Otsu's thresholding
+    from skimage.filters import threshold_otsu
+    threshold = threshold_otsu(img_array)
+    binary_img = img_array > threshold
+    
+    # Convert back to PIL image
+    pil_image = Image.fromarray((binary_img * 255).astype(np.uint8))
+    
+    # Apply light sharpening to enhance edges
+    from PIL import ImageEnhance
+    sharpener = ImageEnhance.Sharpness(pil_image)
+    pil_image = sharpener.enhance(2.0)  # Moderate sharpening for edge clarity
+    
+    return pil_image
 
 
 def save_images(

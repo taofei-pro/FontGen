@@ -55,6 +55,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sr_model", type=str, default="basic")
     parser.add_argument("--sr_tile", action="store_true")
     parser.add_argument("--sr_tile_size", type=int, default=256)
+    parser.add_argument("--num_chars", type=int, default=20, help="Number of characters to generate (default: 20)")
     return parser.parse_args()
 
 
@@ -240,6 +241,12 @@ def main() -> None:
 
     dataset = GlyphImageDataset(img_dir=args.condition_img_dir, normalize=True)
     dataset = StructureConditionDataset(base_dataset=dataset, config=structure_config)
+    
+    # Limit to num_chars if specified
+    if args.num_chars > 0:
+        dataset = torch.utils.data.Subset(dataset, range(min(args.num_chars, len(dataset))))
+        print(f"[Infer] Limited to {len(dataset)} characters")
+    
     loader = DataLoader(
         dataset=dataset,
         batch_size=args.batch_size,
@@ -335,10 +342,48 @@ def main() -> None:
             x0_clip=args.x0_clip,
         )
         
-        # Debug tokens
-        print(f"[Infer] tokens stats min={tokens.min().item():.3f} max={tokens.max().item():.3f} mean={tokens.mean().item():.3f}")
-        
         images = tokenizer.decode(tokens)
+
+        # 对生成的图像进行全面优化，减少黑色干扰
+        images = images.clamp(-1.0, 1.0)
+        
+        # 1. 调整亮度，将图像均值调整到更合适的水平
+        current_mean = images.mean()
+        target_mean = -0.2  # 稍微提高亮度，减少暗色干扰
+        brightness_adjustment = (target_mean - current_mean) * 1.0
+        images = images + brightness_adjustment
+        images = images.clamp(-1.0, 1.0)
+        
+        # 2. 应用更严格的阈值处理，去除更多黑色噪声
+        # 将低于阈值的像素置为黑色，高于阈值的像素线性映射
+        threshold = -0.05
+        mask = images < threshold
+        images = torch.where(mask, torch.tensor(-1.0, device=images.device), images)
+        
+        # 3. 应用中值滤波，有效去除椒盐噪声
+        from torchvision.transforms import functional as F
+        # 将图像转换为[0, 1]范围进行滤波
+        images_01 = (images + 1.0) / 2.0
+        # 定义中值滤波函数
+        def median_filter(img, kernel_size=3):
+            # 对每个图像应用中值滤波
+            img_np = img.cpu().numpy()
+            from scipy.ndimage import median_filter as scipy_median
+            filtered = scipy_median(img_np, size=(1, kernel_size, kernel_size))
+            return torch.from_numpy(filtered).to(img.device)
+        # 应用中值滤波
+        images_01 = median_filter(images_01, kernel_size=3)
+        # 转换回[-1, 1]范围
+        images = images_01 * 2.0 - 1.0
+        images = images.clamp(-1.0, 1.0)
+        
+        # 4. 再次应用阈值处理，确保黑色区域干净
+        images = torch.where(images < -0.3, torch.tensor(-1.0, device=images.device), images)
+        
+        # 5. 适度增强对比度，使轮廓更清晰
+        contrast_factor = 1.5
+        images = (images - images.mean()) * contrast_factor + images.mean()
+        images = images.clamp(-1.0, 1.0)
 
         if images.numel() > 0:
             img_min = images.min().item()

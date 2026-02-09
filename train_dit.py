@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+from datetime import datetime
 
 import torch
 import torch.nn.functional as F
@@ -217,7 +218,7 @@ def main() -> None:
 
             if step % 10 == 0:
                 print(
-                    f"[DiT] step={step} loss={loss.item():.6f} vq={vq_loss.item():.6f}"
+                    f"[DiT] [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] step={step} loss={loss.item():.6f} vq={vq_loss.item():.6f}"
                 )
             step += 1
             if args.max_steps and step >= args.max_steps:

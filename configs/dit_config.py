@@ -19,7 +19,7 @@ class DiTDatasetConfig:
     reference_img_dir: str = "data/reference"
     split_ratios: tuple[float, float] = (0.9, 0.1)
     random_seed: int = 2025
-    batch_size: int = 8
+    batch_size: int = 1
     num_workers: int = 2
 
 

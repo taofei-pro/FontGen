@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
+set -eu
 
 echo "[FontGen] Train DiT"
 
@@ -7,6 +7,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 python train_dit.py \
   --vqgan_ckpt checkpoints/vqgan.pth \
-  --max_steps 10000 \
-  --batch_size 1 \
-  --num_workers 0
+  --use_component_mask \
+  --use_edge_map \
+  --max_steps 10000
+
