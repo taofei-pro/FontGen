@@ -4,14 +4,14 @@ set -euo pipefail
 echo "[FontGen] Full training pipeline start"
 
 # 1) 数据准备
-# bash scripts/prepare_dataset.sh
-# bash scripts/extract_charset.sh
+bash scripts/prepare_dataset.sh
+bash scripts/extract_charset.sh
 
 # 2) 训练 VQGAN
-# bash scripts/train_vqgan.sh
+bash scripts/train_vqgan.sh
 
 # 3) 训练 DiT
-# bash scripts/train_dit.sh
+bash scripts/train_dit.sh
 
 # 4) 训练 SR
 bash scripts/train_sr.sh
