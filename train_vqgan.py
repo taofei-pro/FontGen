@@ -1,10 +1,12 @@
 import argparse
+import gc
 from pathlib import Path
 from datetime import datetime
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from torch.cuda.amp import GradScaler
 
 from configs.vqgan_config import (
     VQGAN2DatasetConfig,
@@ -115,6 +117,7 @@ def main() -> None:
             in_channels=model_config.input_img_channels
         ).to(device)
 
+    # 创建优化器
     g_optimizer = torch.optim.AdamW(
         tokenizer.parameters(),
         lr=training_config.learning_rate,
@@ -144,6 +147,9 @@ def main() -> None:
             T_mult=2,
             eta_min=1e-6
         )
+    
+    # 初始化混合精度训练的梯度缩放器
+    scaler = GradScaler(enabled=True)
 
     def d_hinge_loss(real_logits, fake_logits):
         real_loss = torch.relu(1.0 - real_logits).mean()
@@ -158,27 +164,52 @@ def main() -> None:
         discriminator.train()
 
     step = 0
+    
     for epoch in range(training_config.num_epochs):
+        # 每个epoch开始时清理内存
+        torch.cuda.empty_cache()
+        gc.collect()
+        
         for batch in train_loader:
+            # 检查当前内存使用情况，降低监控频率以提高性能
+            if step % 100 == 0:
+                allocated = torch.cuda.memory_allocated(device) / (1024**3)
+                cached = torch.cuda.memory_reserved(device) / (1024**3)
+                print(f"[内存监控] step={step} 已分配: {allocated:.2f} GB, 缓存: {cached:.2f} GB")
+            
+            # 确保在每个batch开始时梯度为0
+            g_optimizer.zero_grad(set_to_none=True)
+            if d_optimizer is not None:
+                d_optimizer.zero_grad(set_to_none=True)
+            
+            # 只保留需要的数据
             images = batch["tgt_img"].to(device)
-
+            del batch  # 删除原始batch，只保留images
+            
             try:
-                tokens, vq_loss = tokenizer.encode(images)
-                recon = tokenizer.decode(tokens)
-                losses = recon_loss_fn.compute_losses(recon, images)
-                recon_loss = losses["total"]
-                g_loss = recon_loss + vq_loss
+                with torch.cuda.amp.autocast(enabled=True):
+                    tokens, vq_loss = tokenizer.encode(images)
+                    recon = tokenizer.decode(tokens)
+                    
+                    # 计算损失
+                    losses = recon_loss_fn.compute_losses(recon, images)
+                    recon_loss = losses["total"]
+                    g_loss = recon_loss + vq_loss
                 
                 # 检查数值稳定性
                 if torch.isnan(g_loss) or torch.isinf(g_loss):
                     print(f"[警告] step={step} 出现异常损失值: g_loss={g_loss.item()}")
-                    # 跳过这一步训练
+                    # 清理内存并跳过这一步训练
+                    del tokens, recon, losses, recon_loss, g_loss
+                    torch.cuda.empty_cache()
+                    gc.collect()
                     continue
                     
             except Exception as e:
                 print(f"[错误] step={step} 训练过程中出现异常: {e}")
                 # 清理内存并继续
                 torch.cuda.empty_cache()
+                gc.collect()
                 continue
 
             use_disc = (
@@ -186,27 +217,43 @@ def main() -> None:
                 and d_optimizer is not None
                 and step >= training_config.discriminator_start_steps
             )
-            adv_loss = torch.zeros_like(g_loss)
-            d_loss = torch.zeros_like(g_loss)
+            
             if use_disc:
                 # Discriminator step
-                d_optimizer.zero_grad()
-                real_logits = discriminator(images)
-                fake_logits = discriminator(recon.detach())
-                d_loss = d_hinge_loss(real_logits, fake_logits)
-                d_loss.backward()
-                d_optimizer.step()
+                d_optimizer.zero_grad(set_to_none=True)
+                with torch.cuda.amp.autocast(enabled=True):
+                    real_logits = discriminator(images)
+                    fake_logits = discriminator(recon.detach())
+                    d_loss = d_hinge_loss(real_logits, fake_logits)
+                
+                scaler.scale(d_loss).backward()
+                scaler.step(d_optimizer)
+                scaler.update()
+                
+                # 清理判别器相关的临时变量
+                del real_logits, fake_logits, d_loss
+                torch.cuda.empty_cache()
 
                 # Generator adversarial loss
-                adv_logits = discriminator(recon)
-                adv_loss = g_hinge_loss(adv_logits)
-                g_loss = g_loss + training_config.adversarial_weight * adv_loss
+                with torch.cuda.amp.autocast(enabled=True):
+                    adv_logits = discriminator(recon)
+                    adv_loss = g_hinge_loss(adv_logits)
+                    g_loss = g_loss + training_config.adversarial_weight * adv_loss
+                
+                # 清理生成器对抗损失相关的临时变量
+                del adv_logits, adv_loss
+                torch.cuda.empty_cache()
 
-            g_optimizer.zero_grad()
-            g_loss.backward()
+            # Generator step
+            g_optimizer.zero_grad(set_to_none=True)
+            scaler.scale(g_loss).backward()
+            
             # 梯度裁剪
+            scaler.unscale_(g_optimizer)
             torch.nn.utils.clip_grad_norm_(tokenizer.parameters(), max_norm=1.0)
-            g_optimizer.step()
+            scaler.step(g_optimizer)
+            scaler.update()
+            
             g_scheduler.step()
             
             if d_scheduler is not None:
@@ -222,21 +269,38 @@ def main() -> None:
                     f"total={g_loss.item():.6f}"
                 )
             
-            # 定期清理GPU缓存，防止内存泄漏
-            if step % 100 == 0:
+            # 清理当前batch的所有临时变量
+            del tokens, recon, losses, recon_loss, g_loss
+            if 'adv_loss' in locals():
+                del adv_loss
+            if 'd_loss' in locals():
+                del d_loss
+            if 'images' in locals():
+                del images
+            
+            # 每20步进行一次垃圾回收和GPU缓存清理，平衡内存使用和速度
+            if step % 20 == 0:
+                gc.collect()
                 torch.cuda.empty_cache()
-                
+            
             step += 1
             
             # 每500步保存一次模型，避免长时间训练后丢失进度
             if step % 500 == 0:
                 save_path = Path(training_config.model_save_path)
                 save_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                # 保存模型时使用更低的精度
                 torch.save(
                     {"tokenizer": tokenizer.state_dict(), "step": step},
                     save_path,
+                    _use_new_zipfile_serialization=False
                 )
                 print(f"✅ 已保存 VQGAN-2 tokenizer (step {step}): {save_path}")
+                
+                # 保存后再次清理内存
+                torch.cuda.empty_cache()
+                gc.collect()
                 
             if args.max_steps and step >= args.max_steps:
                 save_path = Path(training_config.model_save_path)

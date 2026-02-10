@@ -7,14 +7,14 @@ class VQGAN2DatasetConfig:
     reference_img_dir: str = "data/reference"
     split_ratios: tuple[float, float] = (0.9, 0.1)
     random_seed: int = 2025
-    batch_size: int = 4
+    batch_size: int = 2
     num_workers: int = 2
 
 
 @dataclass
 class VQGAN2ModelConfig:
     input_img_channels: int = 1
-    base_channels: int = 128
+    base_channels: int = 96
     latent_dim: int = 4
     token_dim: int = 256
     codebook_size: int = 256
@@ -30,7 +30,7 @@ class VQGAN2ModelConfig:
 
 @dataclass
 class VQGAN2TrainingConfig:
-    batch_size: int = 4
+    batch_size: int = 2
     learning_rate: float = 5e-5
     num_epochs: int = 300
     warmup_epochs: int = 20

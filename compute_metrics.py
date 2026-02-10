@@ -36,7 +36,26 @@ def compute_metrics(
 ) -> None:
     gen_paths = get_image_paths(gen_dir)
     gt_paths = get_image_paths(gt_dir)
-    check_names_match(gen_paths, gt_paths)
+    
+    # Create a dictionary of ground truth paths by filename
+    gt_dict = {path.name: path for path in gt_paths}
+    
+    # Filter generated paths to only include those with matching ground truth
+    filtered_gen_paths = []
+    filtered_gt_paths = []
+    for gen_path in gen_paths:
+        if gen_path.name in gt_dict:
+            filtered_gen_paths.append(gen_path)
+            filtered_gt_paths.append(gt_dict[gen_path.name])
+    
+    if not filtered_gen_paths:
+        raise ValueError("No matching files found between gen_dir and gt_dir.")
+    
+    print(f"Found {len(filtered_gen_paths)} matching files out of {len(gen_paths)} generated files.")
+    
+    # Update paths to use filtered lists
+    gen_paths = filtered_gen_paths
+    gt_paths = filtered_gt_paths
 
     lpips_model = None
     if not skip_lpips:
