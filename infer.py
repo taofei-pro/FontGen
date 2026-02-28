@@ -344,15 +344,35 @@ def main() -> None:
         
         images = tokenizer.decode(tokens)
 
-        # 简化后处理，重点调整亮度确保字符可见
+        # 完全移除后处理，只保留最基本的clamp操作
+        # 以获得最原始的生成结果
         images = images.clamp(-1.0, 1.0)
         
-        # 调整亮度，大幅提高图像亮度使字符可见
-        current_mean = images.mean()
-        target_mean = 0.3  # 提高亮度目标以增强字符可见性
-        brightness_adjustment = (target_mean - current_mean) * 1.0
-        images = images + brightness_adjustment
-        images = images.clamp(-1.0, 1.0)
+        # 添加降噪处理，减少生成图像中的噪点
+        # 1. 自定义高斯模糊降噪（减少随机噪点）
+        def gaussian_blur(image, kernel_size=3, sigma=0.8):
+            # 创建高斯核
+            k = kernel_size
+            t = torch.linspace(-(k//2), k//2, k)
+            gauss = torch.exp(-t**2 / (2 * sigma**2))
+            gauss = gauss / gauss.sum()
+            # 2D高斯核
+            gauss_kernel = gauss.view(-1, 1) * gauss.view(1, -1)
+            gauss_kernel = gauss_kernel.view(1, 1, k, k)
+            # 应用卷积
+            padding = k // 2
+            blurred = torch.nn.functional.conv2d(image, gauss_kernel.to(image.device), padding=padding, groups=image.size(1))
+            return blurred
+        
+        images = gaussian_blur(images, kernel_size=3, sigma=0.8)
+        # 2. 自适应阈值处理（增强轮廓，减少噪声）
+        images_01 = (images + 1.0) / 2.0  # 转换到[0,1]范围
+        # 计算局部均值作为阈值
+        local_mean = torch.nn.functional.avg_pool2d(images_01, kernel_size=5, stride=1, padding=2)
+        # 应用自适应阈值
+        images_01 = torch.where(images_01 > local_mean - 0.1, images_01, torch.zeros_like(images_01))
+        # 转换回[-1,1]范围
+        images = images_01 * 2.0 - 1.0
 
         if images.numel() > 0:
             img_min = images.min().item()
