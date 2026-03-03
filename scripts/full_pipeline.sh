@@ -6,6 +6,7 @@ echo "[FontGen] Full training pipeline start"
 # 1) 数据准备
 bash scripts/prepare_dataset.sh
 bash scripts/extract_charset.sh
+bash scripts/generate_reference.sh
 
 # 2) 训练 VQVAE
 bash scripts/train_vqvae.sh
