@@ -45,8 +45,8 @@ def main():
     vqvae_config = {
         'in_channels': 1,
         'base_channels': 64,
-        'latent_dim': 32,
-        'codebook_size': 512,
+        'latent_dim': 2,
+        'codebook_size': 64,
         'commitment_cost': 0.25
     }
     
