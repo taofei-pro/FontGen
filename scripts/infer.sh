@@ -25,7 +25,7 @@ CMD=(python infer.py
     --enable_sr \
     --sr_ckpt "checkpoints/sr.pth" \
     --sr_model "edsr" \
-    --num_chars 20
+    --num_chars 6763
 )
 
 echo "Running: ${CMD[*]}"
