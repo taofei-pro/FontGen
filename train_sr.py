@@ -95,6 +95,21 @@ def main() -> None:
                 print(f"✅ 已保存 SR 模型: {save_path}")
                 return
 
+    # Save model even if we reach epoch limit before max_steps
+    if step > 0:
+        save_path = Path(args.save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(
+            {
+                "sr": model.state_dict(),
+                "model_name": model_config.model_name,
+                "scale": model_config.scale,
+            },
+            save_path,
+        )
+        print(f"✅ 已保存 SR 模型 (达到 epoch 限制): {save_path}")
+        print(f"训练步数: {step}")
+
 
 if __name__ == "__main__":
     main()

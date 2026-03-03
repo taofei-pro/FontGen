@@ -9,5 +9,5 @@ python train_dit.py \
   --vqgan_ckpt checkpoints/vqgan.pth \
   --use_component_mask \
   --use_edge_map \
-  --max_steps 250000
+  --max_steps 300000
 

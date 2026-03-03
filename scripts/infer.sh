@@ -23,7 +23,7 @@ CMD=(python infer.py
     --use_component_mask \
     --use_edge_map \
     --enable_sr \
-    --sr_ckpt "checkpoints/sr_edsr.pth" \
+    --sr_ckpt "checkpoints/sr.pth" \
     --sr_model "edsr" \
     --num_chars 20
 )

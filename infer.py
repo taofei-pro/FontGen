@@ -306,10 +306,10 @@ def main() -> None:
 
     sr_model = None
     if args.enable_sr:
-        sr_model = SRModel(
-            scale=2, model_name=args.sr_model, ckpt_path=args.sr_ckpt
-        ).to(device)
-        if args.sr_ckpt:
+        if args.sr_ckpt and Path(args.sr_ckpt).exists():
+            sr_model = SRModel(
+                scale=2, model_name=args.sr_model, ckpt_path=args.sr_ckpt
+            ).to(device)
             sr_ckpt = torch.load(args.sr_ckpt, map_location=device)
             if sr_model.is_torchscript:
                 sr_ckpt = None
@@ -321,7 +321,11 @@ def main() -> None:
                 sr_model.load_state_dict(sr_ckpt["sr"])
             else:
                 sr_model.load_state_dict(sr_ckpt["sr"])
-        sr_model.eval()
+            sr_model.eval()
+            print(f"[Infer] SR model loaded from {args.sr_ckpt}")
+        else:
+            print(f"[Infer] SR checkpoint not found at {args.sr_ckpt}, skipping super-resolution")
+            args.enable_sr = False
 
     scheduler = DiffusionScheduler(steps=dit_config.time_steps, device=device)
     output_dir = Path(args.output_dir)
@@ -344,33 +348,57 @@ def main() -> None:
         
         images = tokenizer.decode(tokens)
 
-        # 完全移除后处理，只保留最基本的clamp操作
-        # 以获得最原始的生成结果
+        # 增强轮廓清晰度的后处理流程
         images = images.clamp(-1.0, 1.0)
         
-        # 添加降噪处理，减少生成图像中的噪点
-        # 1. 自定义高斯模糊降噪（减少随机噪点）
+        # 1. 高斯模糊降噪（减少随机噪点）
         def gaussian_blur(image, kernel_size=3, sigma=0.8):
-            # 创建高斯核
             k = kernel_size
             t = torch.linspace(-(k//2), k//2, k)
             gauss = torch.exp(-t**2 / (2 * sigma**2))
             gauss = gauss / gauss.sum()
-            # 2D高斯核
             gauss_kernel = gauss.view(-1, 1) * gauss.view(1, -1)
             gauss_kernel = gauss_kernel.view(1, 1, k, k)
-            # 应用卷积
             padding = k // 2
             blurred = torch.nn.functional.conv2d(image, gauss_kernel.to(image.device), padding=padding, groups=image.size(1))
             return blurred
         
         images = gaussian_blur(images, kernel_size=3, sigma=0.8)
-        # 2. 自适应阈值处理（增强轮廓，减少噪声）
-        images_01 = (images + 1.0) / 2.0  # 转换到[0,1]范围
-        # 计算局部均值作为阈值
-        local_mean = torch.nn.functional.avg_pool2d(images_01, kernel_size=5, stride=1, padding=2)
-        # 应用自适应阈值
-        images_01 = torch.where(images_01 > local_mean - 0.1, images_01, torch.zeros_like(images_01))
+        
+        # 2. 转换到[0,1]范围
+        images_01 = (images + 1.0) / 2.0
+        
+        # 3. 自适应阈值处理（增强轮廓）
+        local_mean = torch.nn.functional.avg_pool2d(images_01, kernel_size=7, stride=1, padding=3)
+        local_std = torch.nn.functional.avg_pool2d(torch.abs(images_01 - local_mean), kernel_size=7, stride=1, padding=3)
+        threshold = local_mean - 0.1 * local_std
+        images_01 = torch.where(images_01 > threshold, images_01, torch.zeros_like(images_01))
+        
+        # 4. 对比度增强
+        images_01 = torch.clamp(images_01 * 1.3, 0, 1)
+        
+        # 5. 边缘增强
+        def edge_enhance(image):
+            # Sobel边缘检测
+            sobel_x = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], device=image.device).float()
+            sobel_y = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], device=image.device).float()
+            sobel_x = sobel_x.view(1, 1, 3, 3)
+            sobel_y = sobel_y.view(1, 1, 3, 3)
+            
+            edges_x = torch.nn.functional.conv2d(image, sobel_x, padding=1, groups=image.size(1))
+            edges_y = torch.nn.functional.conv2d(image, sobel_y, padding=1, groups=image.size(1))
+            edges = torch.sqrt(edges_x**2 + edges_y**2)
+            
+            # 增强边缘
+            enhanced = image + edges * 0.3
+            return torch.clamp(enhanced, 0, 1)
+        
+        images_01 = edge_enhance(images_01)
+        
+        # 6. 二值化处理，增强轮廓清晰度
+        threshold = 0.35
+        images_01 = torch.where(images_01 > threshold, torch.ones_like(images_01), torch.zeros_like(images_01))
+        
         # 转换回[-1,1]范围
         images = images_01 * 2.0 - 1.0
 
