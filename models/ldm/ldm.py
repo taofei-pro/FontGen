@@ -151,7 +151,11 @@ class LDM(nn.Module):
     
     def load_vqvae_checkpoint(self, checkpoint_path: str):
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
-        self.vqvae.load_state_dict(checkpoint)
+        # Check if checkpoint contains model_state_dict
+        if 'model_state_dict' in checkpoint:
+            self.vqvae.load_state_dict(checkpoint['model_state_dict'])
+        else:
+            self.vqvae.load_state_dict(checkpoint)
         print(f"Loaded VQ-VAE checkpoint from {checkpoint_path}")
     
     def freeze_vqvae(self):

@@ -11,6 +11,7 @@ from models.ldm.ldm import LDM
 from datasets.image_dataset import PairedGlyphImageDataset
 from utils.font.font_utils import read_charset_from_file
 from configs.ldm_config import LDMModelConfig
+from configs.vqvae_config import VQVAEModelConfig
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -69,22 +70,23 @@ def main():
     output_dir.mkdir(exist_ok=True, parents=True)
     
     # Initialize LDM model using config
-    model_config = LDMModelConfig()
+    ldm_model_config = LDMModelConfig()
+    vqvae_model_config = VQVAEModelConfig()
     
     # Convert config to the format expected by LDM
     vqvae_config = {
-        'in_channels': model_config.vqvae_in_channels,
-        'base_channels': model_config.vqvae_base_channels,
-        'latent_dim': model_config.vqvae_latent_dim,
-        'codebook_size': model_config.vqvae_codebook_size,
-        'commitment_cost': model_config.vqvae_commitment_cost
+        'in_channels': vqvae_model_config.in_channels,
+        'base_channels': vqvae_model_config.base_channels,
+        'latent_dim': vqvae_model_config.latent_dim,
+        'codebook_size': vqvae_model_config.codebook_size,
+        'commitment_cost': vqvae_model_config.commitment_cost
     }
     
     ldm_config = {
-        'time_pos_dim': model_config.time_pos_dim,
-        'time_emb_dim': model_config.time_emb_dim,
-        'time_steps': model_config.time_steps,
-        'unet_base_channels': model_config.unet_base_channels
+        'time_pos_dim': ldm_model_config.time_pos_dim,
+        'time_emb_dim': ldm_model_config.time_emb_dim,
+        'time_steps': ldm_model_config.time_steps,
+        'unet_base_channels': ldm_model_config.unet_base_channels
     }
     
     # Initialize LDM model
@@ -93,7 +95,11 @@ def main():
     # Load checkpoints
     model.load_vqvae_checkpoint(args.vqvae_checkpoint)
     ldm_checkpoint = torch.load(args.ldm_checkpoint, map_location=device)
-    model.load_state_dict(ldm_checkpoint)
+    # Check if checkpoint contains model_state_dict
+    if 'model_state_dict' in ldm_checkpoint:
+        model.load_state_dict(ldm_checkpoint['model_state_dict'])
+    else:
+        model.load_state_dict(ldm_checkpoint)
     model.eval()
     
     # 从字符集生成图像

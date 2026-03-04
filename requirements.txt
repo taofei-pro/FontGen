@@ -7,4 +7,5 @@ potracer==0.0.4
 rich==14.0.0
 scikit-image==0.25.2
 tensorboard==2.19.0
+torchmetrics==1.3.0
 tqdm==4.67.1
