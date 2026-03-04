@@ -8,6 +8,7 @@ from pathlib import Path
 
 from models.vqvae.vqvae import VQVAE
 from datasets.image_dataset import PairedGlyphImageDataset
+from configs.vqgan_config import VQGAN2ModelConfig, VQGAN2TrainingConfig
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -32,20 +33,14 @@ def main():
     dataset = PairedGlyphImageDataset(args.tgt_dir, args.ref_dir)
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
     
-    # Initialize VQ-VAE model
-    vqvae_config = {
-        'in_channels': 1,
-        'base_channels': 64,
-        'latent_dim': 2,
-        'codebook_size': 64,
-        'commitment_cost': 0.25
-    }
+    # Initialize VQ-VAE model using config
+    model_config = VQGAN2ModelConfig()
     model = VQVAE(
-        in_channels=vqvae_config['in_channels'],
-        base_channels=vqvae_config['base_channels'],
-        latent_dim=vqvae_config['latent_dim'],
-        codebook_size=vqvae_config['codebook_size'],
-        commitment_cost=vqvae_config['commitment_cost']
+        in_channels=model_config.input_img_channels,
+        base_channels=model_config.base_channels,
+        latent_dim=model_config.latent_dim,
+        codebook_size=model_config.codebook_size,
+        commitment_cost=model_config.commitment_cost
     ).to(device)
     
     # Initialize optimizer and scaler

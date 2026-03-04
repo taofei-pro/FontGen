@@ -10,6 +10,7 @@ from tqdm import tqdm
 from models.ldm.ldm import LDM
 from datasets.image_dataset import PairedGlyphImageDataset
 from utils.font.font_utils import read_charset_from_file
+from configs.ldm_config import LDMModelConfig
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -67,21 +68,23 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
     
-    # VQ-VAE configuration
+    # Initialize LDM model using config
+    model_config = LDMModelConfig()
+    
+    # Convert config to the format expected by LDM
     vqvae_config = {
-        'in_channels': 1,
-        'base_channels': 64,
-        'latent_dim': 2,
-        'codebook_size': 64,
-        'commitment_cost': 0.25
+        'in_channels': model_config.vqvae_in_channels,
+        'base_channels': model_config.vqvae_base_channels,
+        'latent_dim': model_config.vqvae_latent_dim,
+        'codebook_size': model_config.vqvae_codebook_size,
+        'commitment_cost': model_config.vqvae_commitment_cost
     }
     
-    # LDM configuration - use the same parameters as HanziGen
     ldm_config = {
-        'time_pos_dim': 256,
-        'time_emb_dim': 1024,
-        'time_steps': 1000,
-        'unet_base_channels': 64
+        'time_pos_dim': model_config.time_pos_dim,
+        'time_emb_dim': model_config.time_emb_dim,
+        'time_steps': model_config.time_steps,
+        'unet_base_channels': model_config.unet_base_channels
     }
     
     # Initialize LDM model
