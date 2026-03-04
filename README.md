@@ -1,164 +1,119 @@
-# FontGen - 最强架构项目说明
+# FontGen - 字体生成项目说明
 
-本项目是 **HanziGen 的独立升级版**，聚焦最强架构路线，专注于单一字体的极致还原：
+本项目是 **HanziGen 的独立升级版**，专注于字体风格学习与生成：
 
-**VQGAN‑2 + DiT + 结构条件 + 超分 + 矢量化**
+**VQVAE + LDM (Latent Diffusion Model) + 推理**
 
 目标场景：
 - 少样本（如 749 字）学习字体风格
 - 扩展生成 6763 字全字库
-- 支持高分辨率输出与字体包生产
+- 支持高质量字体输出
 
 **环境说明**：本项目使用 conda 环境名 `font-gen`（原 `hanzigen` 已改名）。
 
 ---
 
-## 🧠 最强架构概览
+## 🧠 架构概览
 
 ```
-结构条件(偏旁/边缘/骨架)
+数据准备
         ↓
-VQGAN‑2 Tokenizer (离散 token 空间)
+VQVAE (向量量化自编码器) → 学习字体的潜在表示
         ↓
-DiT (扩散 Transformer 去噪)
+LDM (潜在扩散模型) → 在潜在空间中进行扩散生成
         ↓
-超分模型 (SR: 512→1024+)
+infer_ldm → 生成字体图像
         ↓
-矢量化 (Potrace/FontForge)
+质量评估
 ```
 
 ---
 
 ## ✅ 已完成的部分
 
-1) 结构条件管线
-- 已接入 component mask / edge map / skeleton
-- `datasets/structure_dataset.py` 可输出结构条件张量
+1) VQVAE 训练
+- 已实现 `train_vqvae.py` 训练脚本
+- 支持保存 VQVAE 权重
+- 模型位于 `models/vqvae/vqvae.py`
 
-2) VQGAN‑2 tokenizer
-- 已加入量化/码本
-- 支持 `train_vqgan.py` 训练并保存权重
-- ✅ 多尺度量化（fine + coarse）以提升细节保真
-- ✅ coarse 权重=0.5，decoder 输出使用 tanh 约束范围
-- ✅ 前景加权重建损失（抑制“全白”塌陷）
+2) LDM 训练
+- 已实现 `train_ldm.py` 训练脚本
+- 支持加载预训练的 VQVAE 权重
+- 模型位于 `models/ldm/ldm.py`
 
-3) DiT 训练流程
-- 已接入 VQGAN‑2 tokenizer
-- 已升级为标准扩散训练（加噪/去噪）
-- 支持加载训练好的 tokenizer 权重
-- 已替换为 Transformer DiT 结构（基础版）
-- ✅ 窗口注意力（window_size=8）降低序列成本
-- ✅ 支持 Shifted Window（交错窗口提升跨窗建模）
+3) 推理流程
+- 已实现 `infer_ldm.py` 推理脚本
+- 支持从训练好的模型生成字体图像
 
----
-
-## 🔧 仍需完成的部分
-
-1) VQGAN‑2 完整训练
-- ✅ 已加入 LPIPS 感知损失与判别器稳定训练（hinge + warmup）
-- ✅ 支持导出 tokenizer checkpoint
-
-2) DiT 采样/推理
-- ✅ 已提供 `infer.py` 基础采样流程（DDIM）
-- ✅ 支持 DDPM 采样
-- ✅ 支持 DPM++ 2M（`--sampler dpmpp_2m`）
-- ✅ 支持 DPM++ 2S（`--sampler dpmpp_2s`）
-- ✅ 支持 DPM++ 3M（`--sampler dpmpp_3m`）
-- ✅ 支持 Karras 噪声调度（`--schedule karras`）
-- ✅ 2S 中点步使用 lambda→sigma→t 映射（更稳定）
-- ✅ 支持 CFG Rescale（`--cfg_rescale`）与 x0 clip（`--x0_clip`）
-- ✅ DPM++ 多步采样加入历史截断（更稳定）
-- ✅ 末步直接回落到 x0（更稳，含 DDIM）
-- TODO: DPM-Solver++ 更完整策略与噪声调度改进
-
-3) 超分链路
-- ✅ 已提供 `train_sr.py` 基础 SR 训练与 `tile_infer` 推理
-- ✅ 增加 EDSR 结构（`--model_name edsr`）
-- ✅ 允许外部 Real‑ESRGAN / SwinIR（需 TorchScript 权重，`--sr_model realesrgan|swinir`）
-- TODO: 接入 Real‑ESRGAN / SwinIR 等更强模型
-
-4) 矢量化与字体包输出
-- ✅ `convert_to_svg.py`（Potrace → SVG）
-- ✅ `fontforge_pipeline.py`（FontForge → TTF/OTF，可选）
+4) 完整 pipeline
+- 已提供 `scripts/full_pipeline.sh` 完整训练流程
+- 包含数据准备、训练、推理和评估
 
 ---
 
-## 🚀 当前可用训练命令（最小验证）
+## 🚀 完整训练流程
 
 ```bash
-# 0) 字体覆盖率分析与数据准备（以 fonts/M8.ttf 为目标）
-bash scripts/analyze_font.sh
+# 运行完整训练 pipeline
+bash scripts/full_pipeline.sh
+```
+
+### 流程详细步骤：
+
+1) **数据准备**
+   - `bash scripts/prepare_dataset.sh` - 准备目标字体数据
+   - `bash scripts/extract_charset.sh` - 提取字符集
+   - `bash scripts/generate_reference.sh` - 生成参考图像
+
+2) **训练 VQVAE**
+   - `bash scripts/train_vqvae.sh` - 训练向量量化自编码器
+
+3) **训练 LDM**
+   - `bash scripts/train_ldm.sh` - 训练潜在扩散模型
+
+4) **推理生成**
+   - `bash scripts/infer_ldm.sh` - 使用训练好的模型生成字体图像
+
+5) **质量评估**
+   - `bash scripts/compute_metrics.sh` - 计算生成字体的质量指标
+
+---
+
+## � 单独运行命令
+
+### 数据准备
+```bash
 bash scripts/prepare_dataset.sh
 bash scripts/extract_charset.sh
-
-# VQGAN‑2 tokenizer 训练（最小闭环）
-python train_vqgan.py --max_steps 20
-# 可选：--perceptual_weight 0.4 --adversarial_weight 0.1 --discriminator_start_steps 500
-
-# DiT 训练（最小闭环，默认结构条件）
-python train_dit.py --max_steps 20
-
-# DiT 使用预训练 tokenizer
-python train_dit.py --vqgan_ckpt checkpoints/vqgan.pth --max_steps 20
+bash scripts/generate_reference.sh
 ```
 
----
-
-## 🧪 FontGen 推理与向量化（最小闭环）
-
+### 训练 VQVAE
 ```bash
-# 1) 推理生成
-bash scripts/infer.sh
+# 使用脚本训练
+bash scripts/train_vqvae.sh
 
-# 2) Potrace 矢量化
-bash scripts/convert_to_svg.sh
-
-# 3) FontForge 打包字体（需系统安装 fontforge 命令）
-bash scripts/svg_to_font.sh
+# 或直接运行 Python 脚本
+python train_vqvae.py --batch_size 1 --num_epochs 100
 ```
 
----
-
-## 🧰 训练流程与调参建议（准备训练）
-
+### 训练 LDM
 ```bash
-# 1) 数据准备（M8 作为目标字）
-# 注意：已在 tokenizer 中加入下采样，默认使用 256x256
-bash scripts/analyze_font.sh
-bash scripts/prepare_dataset.sh
-bash scripts/extract_charset.sh
+# 使用脚本训练
+bash scripts/train_ldm.sh
 
-# 2) VQGAN‑2 训练（建议先跑 5k~20k steps）
-bash scripts/train_vqgan.sh
-
-# 3) DiT 训练（加载 tokenizer）
-bash scripts/train_dit.sh
-
-# 4) 超分训练（EDSR）
-bash scripts/train_sr.sh
-
-# 5) 推理（已启用 SR）
-bash scripts/infer.sh
-
-# 6) 矢量化与字体输出
-bash scripts/convert_to_svg.sh
-bash scripts/svg_to_font.sh
-
-# 7) 相似度评估（可选）
-bash scripts/compute_metrics.sh
+# 或直接运行 Python 脚本
+python train_ldm.py --vqvae_checkpoint checkpoints/vqvae.pth --batch_size 1 --num_epochs 100
 ```
 
-调参建议（起点）：
-- 采样：`dpmpp_3m` + `karras`，`cfg_rescale=0.3`，`x0_clip=2.0`
-- 若显存紧：降低 `batch_size`、`sampling_steps`，或关闭 SR
-- 若对抗不稳定：调大 `discriminator_start_steps`（如 1000）
+### 推理
+```bash
+# 使用脚本推理
+bash scripts/infer_ldm.sh
 
----
-
-## ✅ 完整性检查（当前状态）
-
-- FontGen 主流程已完整：数据准备 → VQGAN‑2 → DiT → 推理 → SR → 矢量化 → 字体输出
-- 旧版 LDM 相关脚本已移除，避免误用
+# 或直接运行 Python 脚本
+python infer_ldm.py
+```
 
 ---
 
@@ -170,20 +125,36 @@ bash scripts/compute_metrics.sh
 
 ## 📌 目录结构重点
 
-- `configs/`：VQGAN‑2 / DiT / SR / Structure 配置
-- `models/vqgan/`：VQGAN‑2 tokenizer + 判别器
-- `models/dit/`：DiT + Scheduler
-- `datasets/structure_dataset.py`：结构条件数据集
-- `train_vqgan.py` / `train_dit.py`：训练入口
+- `models/vqvae/`：VQVAE 模型实现
+- `models/ldm/`：LDM 模型实现
+- `datasets/`：数据集相关代码
+- `scripts/`：各种脚本文件
+  - `full_pipeline.sh`：完整训练流程
+  - `train_vqvae.sh`：VQVAE 训练脚本
+  - `train_ldm.sh`：LDM 训练脚本
+  - `infer_ldm.sh`：推理脚本
+- `train_vqvae.py`：VQVAE 训练入口
+- `train_ldm.py`：LDM 训练入口
+- `infer_ldm.py`：推理入口
 
 ---
 
 ## 🗺️ 推荐推进路线
 
-1. 完成 VQGAN‑2 训练（高质量 tokenizer）
-2. 完成 DiT 采样推理
-3. 接入超分与矢量化
-4. 生成全字库并导出字体包
+1. 运行完整 pipeline 进行端到端测试
+2. 根据需要调整 VQVAE 和 LDM 的超参数
+3. 评估生成结果并迭代优化
+4. 生成完整字库并进行质量检查
+
+---
+
+## 📝 弃用说明
+
+以下脚本已经基本弃用，建议使用新的 VQVAE + LDM 架构相关脚本：
+
+- `scripts/infer.sh` - 已被 `scripts/infer_ldm.sh` 替代
+- `scripts/train_vqgan.sh` - 已被 `scripts/train_vqvae.sh` 替代
+- `scripts/train_dit.sh` - 已被 `scripts/train_ldm.sh` 替代
 
 ---
 

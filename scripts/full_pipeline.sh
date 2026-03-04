@@ -3,7 +3,9 @@ set -euo pipefail
 
 echo "[FontGen] Full training pipeline start"
 
-# 数据目录清理已移除，避免权限问题
+# 清理数据目录，避免旧数据干扰
+echo "[FontGen] Cleaning data directories..."
+rm -rf data/target/* data/reference/* data/outputs/* data/reference_infer/*
 
 # 1) 数据准备
 bash scripts/prepare_dataset.sh
