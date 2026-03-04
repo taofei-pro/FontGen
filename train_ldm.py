@@ -42,10 +42,10 @@ def main():
         'commitment_cost': 0.25
     }
     
-    # LDM configuration
+    # LDM configuration - use the same parameters as HanziGen
     ldm_config = {
-        'time_pos_dim': 64,
-        'time_emb_dim': 256,
+        'time_pos_dim': 256,
+        'time_emb_dim': 1024,
         'time_steps': 1000,
         'unet_base_channels': 64
     }

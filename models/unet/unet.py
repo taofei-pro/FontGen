@@ -132,8 +132,8 @@ class UNetEncoder(nn.Module):
     def __init__(self, in_channels: int, base_channels: int, time_emb_dim: int):
         super().__init__()
 
-        # Adjusted for 8x8 input
-        ch_multipliers = [1, 2, 4]
+        # Use the same structure as HanziGen
+        ch_multipliers = [1, 2, 4, 8]
         channels = [in_channels] + [base_channels * m for m in ch_multipliers]
 
         self.encoder_blocks = nn.ModuleList(
@@ -160,8 +160,8 @@ class UNetDecoder(nn.Module):
     def __init__(self, out_channels: int, base_channels: int, time_emb_dim: int):
         super().__init__()
 
-        # Adjusted for 8x8 output
-        ch_multipliers = [4, 2, 1]
+        # Use the same structure as HanziGen
+        ch_multipliers = [8, 4, 2, 1]
         channels = [base_channels * m for m in ch_multipliers] + [base_channels]
 
         self.decoder_blocks = nn.ModuleList(
@@ -192,7 +192,8 @@ class UNetBottleneck(nn.Module):
     def __init__(self, base_channels: int, time_emb_dim: int):
         super().__init__()
 
-        channels = base_channels * 4
+        # Use the same structure as HanziGen
+        channels = base_channels * 8
 
         self.bottleneck_blocks = nn.ModuleList(
             [

@@ -6,7 +6,7 @@ echo "[FontGen] Generate reference images"
 # 检查 target_charset.txt 是否存在，不存在则生成
 if [ ! -f "charsets/target_charset.txt" ]; then
     echo "[FontGen] target_charset.txt not found, generating..."
-    python extract_charset_from_font.py
+    python extract_charset_from_font.py --font_path fonts/case/case.ttf --output_path charsets/target_charset.txt
 fi
 
 python generate_reference_images.py \

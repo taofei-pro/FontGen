@@ -198,7 +198,7 @@ class LDM(nn.Module):
         latents = torch.randn(batch_size, channels, height, width, device=self.device)
         
         # Denoise using DDIM
-        self.scheduler.set_timesteps(sample_steps)
+        self.scheduler.set_timesteps(sample_steps + 1)
         timesteps = self.scheduler.timesteps
         
         for t, t_prev in zip(timesteps[:-1], timesteps[1:]):
