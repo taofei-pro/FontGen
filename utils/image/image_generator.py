@@ -75,25 +75,28 @@ class GlyphImageGenerator:
             sample_ratio=self.config.sample_ratio,
         )
 
-        self._process_glyphs_in_parallel(
+        success_count = self._process_glyphs_in_parallel(
             glyphs=selected_glyphs,
             output_dir=output_dir,
             image_size=self.config.img_size,
             num_workers=num_workers,
         )
+        print(f"Successfully generated {success_count} images for {font_role} font")
 
     def save_glyph_image(
         self,
         char: str,
         output_dir: Path,
         img_size: tuple[int, int],
-    ) -> None:
+    ) -> bool:
         """
         Save the glyph image to the specified directory.
+        Returns True if the image was saved successfully.
         """
         image = self._render_glyph_to_image(char, img_size)
         image_path = output_dir / f"{ord(char):05X}.png"
         image.save(image_path)
+        return True
 
     def _render_glyph_to_image(
         self,
@@ -136,9 +139,10 @@ class GlyphImageGenerator:
         output_dir: Path,
         image_size: tuple[int, int],
         num_workers: int,
-    ) -> None:
+    ) -> int:
         """
         Process and save glyph images in parallel using multiple threads.
+        Returns the number of successfully saved images.
         """
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             futures = [
@@ -151,10 +155,45 @@ class GlyphImageGenerator:
                 for glyph in glyphs
             ]
 
+            success_count = 0
             for future in tqdm(futures, desc="Saving images"):
-                future.result()
+                if future.result():
+                    success_count += 1
+            
+            return success_count
 
     # ===== Glyph selection =====
+    def get_supported_charset(self) -> set[str]:
+        """
+        获取字体支持的字符集
+        """
+        from fontTools.ttLib import TTFont
+        font = TTFont(self.font_path)
+        chars = set()
+        
+        # 使用getBestCmap()获取最佳字符映射
+        best_cmap = font.getBestCmap()
+        
+        # 遍历所有字符
+        for code, name in best_cmap.items():
+            # 只添加有效的Unicode字符
+            if 0x20 <= code <= 0xFFFF:
+                chars.add(chr(code))
+        
+        return chars
+
+    def _can_render_char(self, char: str, img_size: tuple[int, int]) -> bool:
+        """
+        检查字符是否能够被渲染
+        """
+        try:
+            image = self._render_glyph_to_image(char, img_size)
+            pixel_data = list(image.getdata())
+            return not all(pixel == 255 for pixel in pixel_data)
+        except Exception as e:
+            print(f"Error rendering character '{char}': {e}")
+            return False
+
     def _sample_glyphs_for_charset(
         self,
         source_charset_path: str | Path,
@@ -165,11 +204,36 @@ class GlyphImageGenerator:
         Sample glyphs from the source charset based on the covered charset.
         """
         source_glyphs = read_charset_from_file(source_charset_path)
-        covered_glyphs = read_charset_from_file(covered_charset_path)
+        
+        # 检查 source_charset_path 是否是临时文件（由 prepare_dataset.py 创建）
+        # 临时文件路径通常包含 'tmp' 或在 /tmp 目录下
+        source_path_str = str(source_charset_path)
+        is_temp_file = 'tmp' in source_path_str.lower() or source_path_str.startswith('/tmp')
+        
+        if is_temp_file:
+            # 如果是临时文件，直接使用所有 source_glyphs，不进行额外过滤
+            print(f"Using temporary charset file, skipping covered charset filtering")
+            selected_glyphs = source_glyphs
+        else:
+            # 尝试读取 covered_charset_path，如果不存在则使用所有 source_glyphs
+            try:
+                covered_glyphs = read_charset_from_file(covered_charset_path)
+                selected_glyphs = covered_glyphs.intersection(source_glyphs)
+            except FileNotFoundError:
+                print(f"Warning: Covered charset file not found at {covered_charset_path}, using all source glyphs")
+                selected_glyphs = source_glyphs
 
-        selected_glyphs = covered_glyphs.intersection(source_glyphs)
-
-        num_sample = max(0, int(len(selected_glyphs) * sample_ratio))
-        selected_glyphs = set(random.sample(list(selected_glyphs), num_sample))
+        # 过滤掉无法渲染的字符
+        renderable_glyphs = []
+        for glyph in selected_glyphs:
+            if self._can_render_char(glyph, self.config.img_size):
+                renderable_glyphs.append(glyph)
+            else:
+                print(f"Filtering out unrenderable character '{glyph}' (U+{ord(glyph):04X})")
+        
+        print(f"Filtered {len(selected_glyphs) - len(renderable_glyphs)} unrenderable characters, {len(renderable_glyphs)} remaining")
+        
+        num_sample = max(0, int(len(renderable_glyphs) * sample_ratio))
+        selected_glyphs = set(random.sample(renderable_glyphs, num_sample) if num_sample < len(renderable_glyphs) else renderable_glyphs)
 
         return selected_glyphs

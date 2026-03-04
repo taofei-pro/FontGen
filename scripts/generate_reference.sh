@@ -3,7 +3,11 @@ set -euo pipefail
 
 echo "[FontGen] Generate reference images"
 
-# python extract_charset_from_font.py # 生成target_charset.txt
+# 检查 target_charset.txt 是否存在，不存在则生成
+if [ ! -f "charsets/target_charset.txt" ]; then
+    echo "[FontGen] target_charset.txt not found, generating..."
+    python extract_charset_from_font.py
+fi
 
 python generate_reference_images.py \
   --charset_path charsets/target_charset.txt \
