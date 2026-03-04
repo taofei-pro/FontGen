@@ -229,7 +229,7 @@ class GlyphImageGenerator:
             if self._can_render_char(glyph, self.config.img_size):
                 renderable_glyphs.append(glyph)
             else:
-                print(f"Filtering out unrenderable character '{glyph}' (U+{ord(glyph):04X})")
+                pass
         
         print(f"Filtered {len(selected_glyphs) - len(renderable_glyphs)} unrenderable characters, {len(renderable_glyphs)} remaining")
         

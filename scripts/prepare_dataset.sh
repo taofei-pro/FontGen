@@ -1,7 +1,7 @@
 #!/bin/bash
 
 TARGET_FONT_PATH="fonts/young.ttf"
-REFERENCE_FONTS_DIR="fonts/jigmo/"
+REFERENCE_FONTS_DIR="fonts/reference/"
 IMG_WIDTH=512
 IMG_HEIGHT=512
 SAMPLE_RATIO=1.0

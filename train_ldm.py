@@ -3,7 +3,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
 from torch.amp import GradScaler, autocast
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from torchmetrics.image import StructuralSimilarityIndexMeasure, PeakSignalNoiseRatio
+from torchmetrics.image import StructuralSimilarityIndexMeasure, PeakSignalNoiseRatio, LearnedPerceptualImagePatchSimilarity
 from tqdm import tqdm
 import argparse
 from pathlib import Path
@@ -24,9 +24,9 @@ def parse_args():
     parser.add_argument('--tgt_dir', type=str, default=dataset_config.target_img_dir, help='Target images directory')
     parser.add_argument('--ref_dir', type=str, default=dataset_config.reference_img_dir, help='Reference images directory')
     parser.add_argument('--vqvae_checkpoint', type=str, default=training_config.vqvae_checkpoint, help='VQ-VAE checkpoint path')
-    parser.add_argument('--batch_size', type=int, default=16, help='Batch size')
-    parser.add_argument('--lr', type=float, default=5e-4, help='Learning rate')
-    parser.add_argument('--num_epochs', type=int, default=250, help='Number of epochs')
+    parser.add_argument('--batch_size', type=int, default=training_config.batch_size, help='Batch size')
+    parser.add_argument('--lr', type=float, default=training_config.learning_rate, help='Learning rate')
+    parser.add_argument('--num_epochs', type=int, default=training_config.num_epochs, help='Number of epochs')
     parser.add_argument('--save_dir', type=str, default=training_config.save_dir, help='Checkpoint save directory')
     parser.add_argument('--sample_dir', type=str, default='samples', help='Sample images save directory')
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to use')
@@ -46,9 +46,11 @@ def save_samples(model, dataloader, sample_dir, epoch, device, sample_steps):
     # Initialize metrics
     ssim = StructuralSimilarityIndexMeasure(data_range=2.0).to(device)  # [-1, 1] range
     psnr = PeakSignalNoiseRatio(data_range=2.0).to(device)  # [-1, 1] range
+    lpips = LearnedPerceptualImagePatchSimilarity(net_type='vgg').to(device)  # Lower is better
     
     total_ssim = 0.0
     total_psnr = 0.0
+    total_lpips = 0.0
     num_samples = 0
     
     with torch.no_grad():
@@ -62,8 +64,12 @@ def save_samples(model, dataloader, sample_dir, epoch, device, sample_steps):
         # Compute metrics
         current_ssim = ssim(generated_imgs, tgt_imgs)
         current_psnr = psnr(generated_imgs, tgt_imgs)
+        # LPIPS expects 3-channel images, so we repeat the single channel
+        current_lpips = lpips(generated_imgs.repeat(1, 3, 1, 1), tgt_imgs.repeat(1, 3, 1, 1))
+        
         total_ssim += current_ssim.item()
         total_psnr += current_psnr.item()
+        total_lpips += current_lpips.item()
         num_samples += 1
         
         # Save samples
@@ -91,9 +97,10 @@ def save_samples(model, dataloader, sample_dir, epoch, device, sample_steps):
     # Calculate average metrics
     avg_ssim = total_ssim / num_samples
     avg_psnr = total_psnr / num_samples
+    avg_lpips = total_lpips / num_samples
     
     print(f'Saved samples to {sample_dir}')
-    print(f'Generation metrics - SSIM: {avg_ssim:.4f}, PSNR: {avg_psnr:.4f}')
+    print(f'Generation metrics - SSIM: {avg_ssim:.4f}, PSNR: {avg_psnr:.4f}, LPIPS: {avg_lpips:.4f}')
 
 def main():
     args = parse_args()

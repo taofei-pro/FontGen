@@ -3,14 +3,14 @@ set -euo pipefail
 
 echo "[FontGen] Full training pipeline start"
 
-# # 清理数据目录，避免旧数据干扰
-# echo "[FontGen] Cleaning data directories..."
-# rm -rf data/target/* data/reference/* data/outputs/* data/reference_infer/*
+# 清理数据目录，避免旧数据干扰
+echo "[FontGen] Cleaning data directories..."
+rm -rf data/target/* data/reference/* data/outputs/* data/reference_infer/* samples/vqvae/* samples/ldm/*
 
-# # 1) 数据准备
-# bash scripts/prepare_dataset.sh
-# bash scripts/extract_charset.sh
-# bash scripts/generate_reference.sh
+# 1) 数据准备
+bash scripts/prepare_dataset.sh
+bash scripts/extract_charset.sh
+bash scripts/generate_reference.sh
 
 # 2) 训练 VQVAE
 bash scripts/train_vqvae.sh

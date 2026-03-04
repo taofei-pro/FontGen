@@ -11,10 +11,19 @@ class VQVAEDownBlock(nn.Module):
             nn.Conv2d(in_channels, out_channels, kernel_size=4, stride=2, padding=1),
             nn.GroupNorm(max(out_channels // 8, 1), out_channels),
             nn.SiLU(),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+            nn.GroupNorm(max(out_channels // 8, 1), out_channels),
+            nn.SiLU(),
         )
+        self.skip_conv = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=1),
+            nn.AvgPool2d(kernel_size=2, stride=2)
+        ) if in_channels != out_channels else nn.AvgPool2d(kernel_size=2, stride=2)
 
     def forward(self, x):
-        return self.down_block(x)
+        skip = self.skip_conv(x)
+        x = self.down_block(x)
+        return x + skip
 
 
 class VQVAEUpBlock(nn.Module):
@@ -24,10 +33,15 @@ class VQVAEUpBlock(nn.Module):
             nn.ConvTranspose2d(in_channels, out_channels, kernel_size=4, stride=2, padding=1),
             nn.GroupNorm(max(out_channels // 8, 1), out_channels),
             nn.SiLU(),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+            nn.GroupNorm(max(out_channels // 8, 1), out_channels),
+            nn.SiLU(),
         )
+        self.skip_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1) if in_channels != out_channels else nn.Identity()
 
     def forward(self, x):
-        return self.up_block(x)
+        x = self.up_block(x)
+        return x
 
 
 class VQVAEOutBlock(nn.Module):
@@ -85,7 +99,7 @@ class VQVAEQuantizer(nn.Module):
 class VQVAEEncoder(nn.Module):
     def __init__(self, in_channels: int, base_channels: int, out_channels: int):
         super().__init__()
-        ch_multipliers = [1, 2, 4]
+        ch_multipliers = [1, 2, 4, 8]
         channels = [in_channels] + [base_channels * m for m in ch_multipliers]
 
         self.encoder_blocks = nn.ModuleList(
@@ -111,7 +125,7 @@ class VQVAEDecoder(nn.Module):
     def __init__(self, in_channels: int, base_channels: int, out_channels: int):
         super().__init__()
 
-        ch_multipliers = [4, 2, 1]
+        ch_multipliers = [8, 4, 2, 1]
         channels = [base_channels * m for m in ch_multipliers] + [out_channels]
 
         self.decoder_blocks = nn.ModuleList(
@@ -141,7 +155,7 @@ class VQVAEDecoder(nn.Module):
 
 
 class VQVAE(nn.Module):
-    def __init__(self, in_channels: int = 1, base_channels: int = 64, latent_dim: int = 32, codebook_size: int = 512, commitment_cost: float = 0.25):
+    def __init__(self, in_channels: int = 1, base_channels: int = 64, latent_dim: int = 2, codebook_size: int = 64, commitment_cost: float = 0.25):
         super().__init__()
         self.encoder = VQVAEEncoder(
             in_channels=in_channels,

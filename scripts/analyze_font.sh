@@ -1,7 +1,7 @@
 #!/bin/bash
 
 TARGET_FONT_PATH="fonts/M8.ttf"
-REFERENCE_FONTS_DIR="fonts/jigmo/"
+REFERENCE_FONTS_DIR="fonts/reference/"
 
 
 python analyze_font.py \

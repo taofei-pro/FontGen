@@ -9,7 +9,7 @@ from utils.font.font_utils import read_charset_from_file
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--charset_path', type=str, default='charsets/target_charset.txt', help='Charset file path')
-    parser.add_argument('--reference_fonts_dir', type=str, default='fonts/jigmo', help='Reference fonts directory')
+    parser.add_argument('--reference_fonts_dir', type=str, default='fonts/reference', help='Reference fonts directory')
     parser.add_argument('--output_dir', type=str, default='data/reference_infer', help='Output directory for reference images')
     return parser.parse_args()
 
