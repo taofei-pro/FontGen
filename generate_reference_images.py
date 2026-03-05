@@ -50,6 +50,18 @@ def main():
                         img_size=font_processing_config.img_size,
                     )
                     break  # 只使用第一个能覆盖该字符的字体
+            else:
+                # 如果覆盖文件不存在，尝试直接生成图像
+                try:
+                    ref_generator.save_glyph_image(
+                        char=char,
+                        output_dir=output_dir,
+                        img_size=font_processing_config.img_size,
+                    )
+                    break  # 只使用第一个能生成该字符的字体
+                except Exception as e:
+                    print(f"Error generating image for character '{char}': {e}")
+                    continue
 
 if __name__ == '__main__':
     main()

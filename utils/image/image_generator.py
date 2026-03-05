@@ -82,6 +82,13 @@ class GlyphImageGenerator:
             num_workers=num_workers,
         )
         print(f"Successfully generated {success_count} images for {font_role} font")
+        
+        # 保存实际能够渲染的字符到 covered.txt 文件
+        covered_charset_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(covered_charset_path, 'w', encoding='utf-8') as f:
+            for glyph in selected_glyphs:
+                f.write(glyph + '\n')
+        print(f"Saved renderable charset to {covered_charset_path}")
 
     def save_glyph_image(
         self,

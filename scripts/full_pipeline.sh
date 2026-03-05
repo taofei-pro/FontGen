@@ -21,10 +21,16 @@ bash scripts/train_ldm.sh
 # 4) 训练 SR (暂时注释，因为 infer_ldm 不使用 SR 模型)
 # bash scripts/train_sr.sh
 
-# 5) 推理
+# 5) 测试验证
+echo "[FontGen] Running test validation..."
+bash scripts/infer_ldm_test.sh
+
+# 6) 推理
+echo "[FontGen] Running full inference..."
 bash scripts/infer_ldm.sh
 
-# 6) 质量评估
+# 7) 质量评估
+echo "[FontGen] Running quality evaluation..."
 bash scripts/compute_metrics.sh
 
 echo "[FontGen] Full training pipeline done"

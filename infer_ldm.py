@@ -1,15 +1,13 @@
 import torch
-import torch.nn.functional as F
-from torch.utils.data import DataLoader
+import torchvision.transforms as T
 from PIL import Image
 import argparse
 from pathlib import Path
-import numpy as np
 from tqdm import tqdm
 
 from models.ldm.ldm import LDM
-from datasets.image_dataset import PairedGlyphImageDataset
 from utils.font.font_utils import read_charset_from_file
+from utils.image.image_utils import get_image_paths
 from configs.ldm_config import LDMModelConfig
 from configs.vqvae_config import VQVAEModelConfig
 
@@ -35,6 +33,8 @@ def save_image(tensor, path):
     # Ensure path has .png extension
     if not str(path).endswith('.png'):
         path = Path(str(path) + '.png')
+    # Ensure output directory exists
+    path.parent.mkdir(parents=True, exist_ok=True)
     img.save(path)
 
 def generate_images_from_charset(model, charset_path, ref_dir, output_dir, batch_size, sample_steps, device):
@@ -42,24 +42,38 @@ def generate_images_from_charset(model, charset_path, ref_dir, output_dir, batch
     # 加载字符集
     charset = read_charset_from_file(charset_path)
     
-    # 创建数据集和数据加载器
-    dataset = PairedGlyphImageDataset(ref_dir, ref_dir)  # 使用相同的目录作为target和reference
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    # 加载参考图像
+    ref_img_paths = get_image_paths(ref_dir)
+    ref_img_dict = {Path(path).stem: path for path in ref_img_paths}
+    
+    # 创建变换
+    transform = T.Compose([
+        T.ToTensor(),
+        T.Normalize(mean=(0.5,), std=(0.5,))
+    ])
     
     # 生成图像
     with torch.no_grad():
-        for batch in tqdm(dataloader, desc='Generating images'):
-            ref_imgs = batch['ref_img'].to(device)
-            img_names = batch['img_name']
+        for char in tqdm(charset, desc='Generating images'):
+            # 获取字符的编码
+            char_code = f"{ord(char):05X}"
             
-            # 生成图像
-            generated_imgs = model.generate(ref_imgs, sample_steps=sample_steps)
-            
-            # 保存生成的图像
-            for i, img_name in enumerate(img_names):
-                output_path = output_dir / img_name
-                save_image(generated_imgs[i], output_path)
+            # 检查是否有对应的参考图像
+            if char_code in ref_img_dict:
+                # 加载参考图像
+                ref_img_path = ref_img_dict[char_code]
+                ref_img = Image.open(ref_img_path).convert("L")
+                ref_img = transform(ref_img).unsqueeze(0).to(device)
+                
+                # 生成图像
+                generated_imgs = model.generate(ref_img, sample_steps=sample_steps)
+                
+                # 保存生成的图像
+                output_path = output_dir / f"{char_code}.png"
+                save_image(generated_imgs[0], output_path)
                 print(f'Saved generated image to {output_path}')
+            else:
+                print(f"No reference image found for character '{char}' (U+{char_code})")
 
 def main():
     args = parse_args()
