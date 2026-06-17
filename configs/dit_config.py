@@ -4,10 +4,10 @@ from dataclasses import dataclass
 @dataclass
 class DiTModelConfig:
     token_dim: int = 256  # Token的维度
-    num_layers: int = 8  # Transformer层数
+    num_layers: int = 12  # Transformer层数 (优化: 8→12，增强模型容量)
     num_heads: int = 8  # 注意力头数
     mlp_ratio: float = 4.0  # MLP隐藏层维度与输入维度的比率
-    dropout: float = 0.1  # Dropout概率
+    dropout: float = 0.05  # Dropout概率 (优化: 0.1→0.05，减少正则化)
     time_steps: int = 1000  # 扩散模型的时间步数
     window_size: int = 4  # 窗口注意力的窗口大小
     shift_window: bool = True  # 是否使用移位窗口注意力

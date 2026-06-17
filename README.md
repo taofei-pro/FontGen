@@ -9,6 +9,10 @@
 - 扩展生成 6763 字全字库
 - 支持高质量字体输出
 
+学习对象：
+https://github.com/wangwenho/HanziGen
+https://github.com/kaonashi-tyc/zi2zi-JiT
+
 **环境说明**：本项目使用 conda 环境名 `font-gen`。
 
 ---

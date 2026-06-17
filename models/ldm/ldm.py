@@ -1,7 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from pathlib import Path
 from models.vqvae.vqvae import VQVAE
 from models.unet.unet import UNet
 
@@ -90,7 +88,7 @@ class SigmoidScheduler:
             noise = torch.randn_like(x, device=self.device)
             return model_mean + torch.sqrt(posterior_variance_t) * noise
     
-    def ddim_step(self, x: torch.Tensor, t: torch.Tensor, t_prev: torch.Tensor, y: torch.Tensor):
+    def ddim_step(self, x: torch.Tensor, t: torch.Tensor, t_prev: torch.Tensor, y: torch.Tensor, eta: float = 0.0):
         alpha_cumprod_t = self.alphas_cumprod[t].reshape(-1, 1, 1, 1)
         alpha_cumprod_t_prev = self.alphas_cumprod[t_prev].reshape(-1, 1, 1, 1)
         sqrt_alpha_cumprod_t = torch.sqrt(alpha_cumprod_t)
@@ -103,10 +101,11 @@ class SigmoidScheduler:
         denominator = sqrt_alpha_cumprod_t
         x0_pred = numerator / denominator
         
-        sigma_t = torch.sqrt((1 - alpha_cumprod_t_prev) / (1 - alpha_cumprod_t) * (1 - alpha_cumprod_t / alpha_cumprod_t_prev))
+        # Compute sigma_t with eta parameter
+        sigma_t = eta * torch.sqrt((1 - alpha_cumprod_t_prev) / (1 - alpha_cumprod_t) * (1 - alpha_cumprod_t / alpha_cumprod_t_prev))
         noise = torch.randn_like(x, device=self.device)
         
-        return sqrt_alpha_cumprod_t_prev * x0_pred + sqrt_one_minus_alpha_cumprod_t_prev * noise
+        return sqrt_alpha_cumprod_t_prev * x0_pred + sigma_t * noise
 
 
 class LDM(nn.Module):
@@ -192,7 +191,7 @@ class LDM(nn.Module):
         return loss
     
     @torch.no_grad()
-    def generate(self, ref_imgs: torch.Tensor, sample_steps: int = 50):
+    def generate(self, ref_imgs: torch.Tensor, sample_steps: int = 150, eta: float = 0.0):
         self.eval()
         
         ref_latents = self.encode_to_latent(ref_imgs)
@@ -210,7 +209,7 @@ class LDM(nn.Module):
             t_prev_tensor = torch.full((batch_size,), t_prev, device=self.device)
             
             noise_pred = self(latents, ref_latents, t_tensor)
-            latents = self.scheduler.ddim_step(latents, t_tensor, t_prev_tensor, noise_pred)
+            latents = self.scheduler.ddim_step(latents, t_tensor, t_prev_tensor, noise_pred, eta=eta)
         
         # Decode latents to images
         generated_imgs = self.decode_from_latent(latents)

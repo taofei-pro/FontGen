@@ -113,7 +113,12 @@ def main():
     sample_dir.mkdir(exist_ok=True, parents=True)
     
     # Initialize dataset and split into train/val
-    dataset = PairedGlyphImageDataset(args.tgt_dir, args.ref_dir)
+    dataset = PairedGlyphImageDataset(
+        args.tgt_dir, 
+        args.ref_dir,
+        use_data_augmentation=True,
+        augmentation_type="advanced",
+    )
     train_size = int(len(dataset) * args.split_ratios[0])
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(
@@ -254,18 +259,6 @@ def main():
                 'best_val_loss': best_val_loss
             }, checkpoint_path)
             print(f'Saved best model to {checkpoint_path}')
-        
-        # Save checkpoint every 20 epochs
-        if (epoch + 1) % 20 == 0:
-            checkpoint_path = save_dir / f'vqvae_epoch_{epoch+1}.pth'
-            torch.save({
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict(),
-                'epoch': epoch,
-                'val_loss': val_avg_loss
-            }, checkpoint_path)
-            print(f'Saved checkpoint to {checkpoint_path}')
 
 if __name__ == '__main__':
     main()

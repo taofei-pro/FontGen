@@ -1,5 +1,29 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
+
+class AttentionBlock(nn.Module):
+    def __init__(self, channels: int):
+        super().__init__()
+        self.norm = nn.GroupNorm(max(channels // 8, 1), channels)
+        self.qkv = nn.Conv2d(channels, channels * 3, kernel_size=1)
+        self.proj = nn.Conv2d(channels, channels, kernel_size=1)
+        self.scale = channels ** -0.5
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        qkv = self.qkv(self.norm(x))
+        q, k, v = qkv.chunk(3, dim=1)
+        q = q.view(B, C, H * W).permute(0, 2, 1)
+        k = k.view(B, C, H * W)
+        v = v.view(B, C, H * W).permute(0, 2, 1)
+        
+        attn = torch.matmul(q, k) * self.scale
+        attn = F.softmax(attn, dim=-1)
+        out = torch.matmul(attn, v).permute(0, 2, 1).view(B, C, H, W)
+        out = self.proj(out)
+        return x + out
 
 
 class TimeResidual(nn.Module):
@@ -21,6 +45,12 @@ class TimeResidual(nn.Module):
             nn.GroupNorm(max(in_channels // 8, 1), in_channels),
             nn.SiLU(),
         )
+        
+        # 只在通道数大于等于256时添加注意力机制
+        if in_channels >= 256:
+            self.attention = AttentionBlock(in_channels)
+        else:
+            self.attention = nn.Identity()
 
     def forward(self, x, t):
         residual = x
@@ -29,6 +59,7 @@ class TimeResidual(nn.Module):
         time = self.time_emb(t)
         x = x + time.unsqueeze(-1).unsqueeze(-1)
         x = self.conv_block2(x)
+        x = self.attention(x)
 
         return x + residual
 
@@ -132,8 +163,8 @@ class UNetEncoder(nn.Module):
     def __init__(self, in_channels: int, base_channels: int, time_emb_dim: int):
         super().__init__()
 
-        # Increase depth and width for better capacity
-        ch_multipliers = [1, 2, 4, 8, 16]
+        # Use 4 layers to reduce memory usage
+        ch_multipliers = [1, 2, 4, 8]
         channels = [in_channels] + [base_channels * m for m in ch_multipliers]
 
         self.encoder_blocks = nn.ModuleList(
@@ -160,8 +191,8 @@ class UNetDecoder(nn.Module):
     def __init__(self, out_channels: int, base_channels: int, time_emb_dim: int):
         super().__init__()
 
-        # Match the new encoder structure
-        ch_multipliers = [16, 8, 4, 2, 1]
+        # Match the 4-layer encoder structure
+        ch_multipliers = [8, 4, 2, 1]
         channels = [base_channels * m for m in ch_multipliers] + [base_channels]
 
         self.decoder_blocks = nn.ModuleList(
@@ -192,8 +223,8 @@ class UNetBottleneck(nn.Module):
     def __init__(self, base_channels: int, time_emb_dim: int):
         super().__init__()
 
-        # Match the new encoder structure
-        channels = base_channels * 16
+        # Match the 4-layer encoder structure
+        channels = base_channels * 8
 
         self.bottleneck_blocks = nn.ModuleList(
             [
@@ -201,7 +232,7 @@ class UNetBottleneck(nn.Module):
                     in_channels=channels,
                     time_emb_dim=time_emb_dim,
                 )
-                for _ in range(4)  # Increase number of bottleneck blocks
+                for _ in range(3)
             ]
         )
 

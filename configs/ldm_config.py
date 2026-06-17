@@ -5,15 +5,49 @@ from dataclasses import dataclass
 class LDMModelConfig:
     # LDM 配置
     time_pos_dim: int = 256  # 时间位置编码的维度
+    # 调大: 提高时间信息的表示能力，但增加计算成本
+    # 调小: 减少计算成本，但可能损失时间信息的表达能力
+    # 推荐范围: 128-512
+    
     time_emb_dim: int = 1024  # 时间嵌入的维度
+    # 调大: 提高模型对时间信息的处理能力，增强模型容量
+    # 调小: 减少模型参数和计算成本
+    # 推荐范围: 512-2048
+    
     time_steps: int = 1000  # 扩散模型的时间步数
-    unet_base_channels: int = 128  # UNet 基础通道数 (increased for better capacity)
+    # 调大: 提高生成质量，使噪声逐渐添加和移除更加平滑
+    # 调小: 减少训练和采样时间，但可能降低生成质量
+    # 推荐范围: 500-2000
+    
+    unet_base_channels: int = 256  # UNet 基础通道数
+    # 调大: 提高模型容量，增强特征提取能力，改善生成质量
+    # 调小: 减少模型参数和计算成本，适合资源受限场景
+    # 推荐范围: 64-256
+    # 注意: 256 时会启用 Attention 机制，显著提升生成质量
+    
+    sample_steps: int = 200  # 采样步数
+    # 调大: 提高生成图像的质量和细节，特别是复杂字形
+    # 调小: 减少采样时间，但可能降低生成质量
+    # 推荐范围: 50-250
 
 
 @dataclass
 class LDMTrainingConfig:
-    batch_size: int = 8  # 训练批量大小 (reduced to fit larger model)
-    learning_rate: float = 5e-4  # 学习率
-    num_epochs: int = 350  # 训练轮数 (increased for better convergence)
+    batch_size: int = 8  # 训练批量大小
+    # 调大: 提高批量统计的准确性，加速训练，改善模型稳定性
+    # 调小: 减少内存使用，适合显存受限场景
+    # 推荐范围: 4-32 (根据硬件能力)
+    
+    learning_rate: float = 1e-4  # 学习率 (优化: 5e-4→1e-4，提高训练稳定性)
+    # 调大: 加速模型收敛，但可能导致不稳定或过拟合
+    # 调小: 提高训练稳定性，但收敛速度较慢
+    # 推荐范围: 1e-5-1e-3
+    
+    num_epochs: int = 1000  # 训练轮数
+    # 调大: 给模型更多时间收敛，可能提高最终性能
+    # 调小: 减少训练时间，但可能导致模型未充分收敛
+    # 推荐范围: 300-1000
+    # 注意: 大模型建议使用更多训练轮数
+    
     save_dir: str = "checkpoints"  # 模型保存目录
     vqvae_checkpoint: str = "checkpoints/vqvae.pth"  # VQVAE 预训练权重路径

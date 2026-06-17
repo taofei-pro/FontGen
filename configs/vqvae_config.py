@@ -14,15 +14,15 @@ class VQVAEDatasetConfig:
 @dataclass
 class VQVAEModelConfig:
     in_channels: int = 1  # 输入图像的通道数，1表示灰度图
-    base_channels: int = 64  # 模型基础通道数
-    latent_dim: int = 2  # 潜在空间的维度
-    codebook_size: int = 64  # 码本大小，决定了离散表示的词汇量
+    base_channels: int = 128  # 模型基础通道数 (优化: 64→128，增强特征提取能力)
+    latent_dim: int = 64  # 潜在空间的维度 (优化: 2→64，提高重建质量)
+    codebook_size: int = 512  # 码本大小 (优化: 64→512，增加离散表示能力)
     commitment_cost: float = 0.25  # 承诺损失的权重
 
 
 @dataclass
 class VQVAETrainingConfig:
     batch_size: int = 8  # 训练批量大小
-    learning_rate: float = 1e-3  # 学习率
-    num_epochs: int = 100  # 训练轮数
+    learning_rate: float = 5e-4  # 学习率 (优化: 1e-3→5e-4，提高稳定性)
+    num_epochs: int = 200  # 训练轮数 (优化: 100→200，更充分训练)
     save_dir: str = "checkpoints"  # 模型保存目录

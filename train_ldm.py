@@ -2,13 +2,13 @@ import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
 from torch.amp import GradScaler, autocast
-from torch.optim.lr_scheduler import CosineAnnealingLR
 from torchmetrics.image import StructuralSimilarityIndexMeasure, PeakSignalNoiseRatio, LearnedPerceptualImagePatchSimilarity
 from tqdm import tqdm
 import argparse
 from pathlib import Path
 from PIL import Image
 import numpy as np
+import math
 
 from models.ldm.ldm import LDM
 from datasets.image_dataset import PairedGlyphImageDataset
@@ -60,6 +60,11 @@ def save_samples(model, dataloader, sample_dir, epoch, device, sample_steps):
         
         # Generate images
         generated_imgs = model.generate(ref_imgs, sample_steps=sample_steps)
+        
+        # Check for NaN values in generated images
+        if torch.isnan(generated_imgs).any():
+            print(f"Warning: NaN values detected in generated images at epoch {epoch}, skipping metrics computation")
+            return
         
         # Compute metrics
         current_ssim = ssim(generated_imgs, tgt_imgs)
@@ -114,7 +119,12 @@ def main():
     sample_dir.mkdir(exist_ok=True, parents=True)
     
     # Initialize dataset and split into train/val
-    dataset = PairedGlyphImageDataset(args.tgt_dir, args.ref_dir)
+    dataset = PairedGlyphImageDataset(
+        args.tgt_dir, 
+        args.ref_dir,
+        use_data_augmentation=True,
+        augmentation_type="advanced",
+    )
     train_size = int(len(dataset) * args.split_ratios[0])
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(
@@ -154,9 +164,24 @@ def main():
     model.freeze_vqvae()
     
     # Initialize optimizer, scheduler, and scaler
-    optimizer = optim.Adam(model.unet.parameters(), lr=args.lr)
-    scheduler = CosineAnnealingLR(optimizer, T_max=args.num_epochs, eta_min=1e-6)
+    optimizer = optim.AdamW(model.unet.parameters(), lr=args.lr, weight_decay=0.01)
+    
+    # Learning rate scheduler with warmup
+    from torch.optim.lr_scheduler import LambdaLR
+    warmup_epochs = 10
+    def lr_lambda(epoch):
+        if epoch < warmup_epochs:
+            return float(epoch) / float(max(1, warmup_epochs))
+        else:
+            # Cosine annealing after warmup
+            progress = float(epoch - warmup_epochs) / float(max(1, args.num_epochs - warmup_epochs))
+            return 0.5 * (1.0 + math.cos(math.pi * progress))
+    
+    scheduler = LambdaLR(optimizer, lr_lambda=lr_lambda)
     scaler = GradScaler(enabled=args.use_amp)
+    
+    # Gradient clipping value
+    grad_clip_value = 1.0
     
     # Training loop
     best_val_loss = float('inf')
@@ -171,11 +196,16 @@ def main():
                 with autocast(device_type=device.type, enabled=args.use_amp):
                     loss = model.train_step(batch)
                 
+                # Check for NaN loss
+                if torch.isnan(loss):
+                    print(f"Warning: NaN loss detected at epoch {epoch+1}, skipping batch")
+                    continue
+                
                 # Backward pass
                 optimizer.zero_grad()
                 scaler.scale(loss).backward()
                 scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.unet.parameters(), max_norm=1.0)
+                torch.nn.utils.clip_grad_norm_(model.unet.parameters(), max_norm=grad_clip_value)
                 scaler.step(optimizer)
                 scaler.update()
                 
@@ -194,6 +224,11 @@ def main():
                 for batch in pbar:
                     with autocast(device_type=device.type, enabled=args.use_amp):
                         loss = model.train_step(batch)
+                    
+                    # Check for NaN loss
+                    if torch.isnan(loss):
+                        print(f"Warning: NaN loss detected during validation at epoch {epoch+1}, skipping batch")
+                        continue
                     
                     val_total_loss += loss.item()
                     
@@ -229,18 +264,6 @@ def main():
                 'best_val_loss': best_val_loss
             }, checkpoint_path)
             print(f'Saved best model to {checkpoint_path}')
-        
-        # Save checkpoint every 20 epochs
-        if (epoch + 1) % 20 == 0:
-            checkpoint_path = save_dir / f'ldm_epoch_{epoch+1}.pth'
-            torch.save({
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict(),
-                'epoch': epoch,
-                'val_loss': val_avg_loss
-            }, checkpoint_path)
-            print(f'Saved checkpoint to {checkpoint_path}')
 
 if __name__ == '__main__':
     main()
